@@ -4,6 +4,7 @@ add_library(reversi_engine STATIC
     src/moves.cpp
     src/perft.cpp
     src/eval.cpp
+    src/search.cpp
 )
 add_library(reversi::engine ALIAS reversi_engine)
 
