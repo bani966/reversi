@@ -13,8 +13,16 @@ namespace {
 constexpr int kInfinity = 1'000'000;
 
 int negamax(const Position& pos, int depth, int alpha, int beta, const EvalFn& eval,
-            std::uint64_t& nodes) {
+            std::uint64_t& nodes, const CancellationToken* cancellation) {
     ++nodes;
+    if (cancellation != nullptr && cancellation->stopRequested()) {
+        // Collapse immediately rather than recursing further: every nested call checks this
+        // same condition at its own entry, so a requested stop unwinds the whole remaining
+        // call stack in O(current depth), not O(remaining tree). The exact value returned
+        // here is irrelevant — search() marks the overall result incomplete and callers that
+        // care about correctness discard it rather than trust this number.
+        return eval(pos);
+    }
     const Bitboard moves = legalMoves(pos);
     if (moves == 0) {
         const Position passed = applyPass(pos);
@@ -25,7 +33,7 @@ int negamax(const Position& pos, int depth, int alpha, int beta, const EvalFn& e
             return eval(pos);
         }
         // Forced pass: doesn't consume depth, see search.hpp.
-        return -negamax(passed, depth, -beta, -alpha, eval, nodes);
+        return -negamax(passed, depth, -beta, -alpha, eval, nodes, cancellation);
     }
     if (depth == 0) {
         return eval(pos);
@@ -33,7 +41,8 @@ int negamax(const Position& pos, int depth, int alpha, int beta, const EvalFn& e
     int best = -kInfinity;
     for (Bitboard b = moves; b != 0; b &= b - 1) {
         const int square = std::countr_zero(b);
-        const int score = -negamax(applyMove(pos, square), depth - 1, -beta, -alpha, eval, nodes);
+        const int score =
+            -negamax(applyMove(pos, square), depth - 1, -beta, -alpha, eval, nodes, cancellation);
         if (score > best) {
             best = score;
         }
@@ -49,15 +58,16 @@ int negamax(const Position& pos, int depth, int alpha, int beta, const EvalFn& e
 
 } // namespace
 
-SearchResult search(const Position& p, int depth, const EvalFn& eval) {
+SearchResult search(const Position& p, int depth, const EvalFn& eval,
+                    const CancellationToken* cancellation) {
     const Bitboard moves = legalMoves(p);
     SearchResult result;
     int alpha = -kInfinity;
     const int beta = kInfinity;
     for (Bitboard b = moves; b != 0; b &= b - 1) {
         const int square = std::countr_zero(b);
-        const int score =
-            -negamax(applyMove(p, square), depth - 1, -beta, -alpha, eval, result.nodes);
+        const int score = -negamax(applyMove(p, square), depth - 1, -beta, -alpha, eval,
+                                   result.nodes, cancellation);
         if (result.bestMove == -1 || score > result.score) {
             result.score = score;
             result.bestMove = square;
@@ -66,6 +76,7 @@ SearchResult search(const Position& p, int depth, const EvalFn& eval) {
             alpha = result.score;
         }
     }
+    result.completed = cancellation == nullptr || !cancellation->stopRequested();
     return result;
 }
 

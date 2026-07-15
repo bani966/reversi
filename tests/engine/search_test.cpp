@@ -1,5 +1,6 @@
 #include "reversi/search.hpp"
 
+#include "reversi/cancellation.hpp"
 #include "reversi/moves.hpp"
 
 #include <bit>
@@ -91,6 +92,23 @@ TEST(Search, FailSoftAlphaBetaScoreMatchesUnprunedNegamax) {
 TEST(Search, NodesAreCountedAndPositive) {
     const SearchResult result = search(Position::start(), 3);
     EXPECT_GT(result.nodes, std::uint64_t{0});
+}
+
+TEST(Search, NoCancellationTokenLeavesResultCompleted) {
+    const SearchResult result = search(Position::start(), 3);
+    EXPECT_TRUE(result.completed);
+}
+
+TEST(Search, CancellationStopsPromptlyAndMarksResultIncomplete) {
+    CancellationToken token;
+    token.requestStop();
+    const SearchResult result = search(Position::start(), 8, evaluateDiscDifferential, &token);
+    EXPECT_FALSE(result.completed);
+    // The start position has 4 legal root moves; each triggers exactly one negamax call that
+    // collapses immediately at entry (the cancellation check fires before it recurses), so a
+    // pre-cancelled search visits exactly 4 nodes regardless of the requested depth - proof
+    // the whole subtree was skipped, not merely searched fast.
+    EXPECT_EQ(result.nodes, std::uint64_t{4});
 }
 
 } // namespace
