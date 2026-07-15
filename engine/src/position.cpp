@@ -19,6 +19,23 @@ Position Position::start() {
     return p;
 }
 
+std::optional<Position> Position::fromBoardString(std::string_view board, bool blackToMove) {
+    if (board.size() != kBoardSquares) {
+        return std::nullopt;
+    }
+    Bitboard black = 0;
+    Bitboard white = 0;
+    for (int i = 0; i < kBoardSquares; ++i) {
+        const char c = board[static_cast<std::size_t>(i)];
+        if (c == 'X' || c == 'x' || c == '*') {
+            black |= bit(i);
+        } else if (c == 'O' || c == 'o' || c == '0') {
+            white |= bit(i);
+        }
+    }
+    return blackToMove ? Position{black, white} : Position{white, black};
+}
+
 std::string squareToString(int square) {
     const char file = static_cast<char>('a' + square % 8);
     const char rank = static_cast<char>('1' + square / 8);

@@ -6,28 +6,6 @@
 
 namespace reversi::endgame {
 
-namespace {
-
-// String index i and this project's square index i share the same row-wise convention (file
-// increases fastest, i.e. a1,b1,...,h1,a2,...), so no reindexing is needed - verified by hand
-// against the source data while vendoring it (see ffo_easy.txt's header comment).
-Position parseBoard(const std::string& board, const std::string& sideToMove) {
-    Bitboard black = 0;
-    Bitboard white = 0;
-    for (int i = 0; i < kBoardSquares; ++i) {
-        const char c = board[static_cast<std::size_t>(i)];
-        if (c == 'X' || c == 'x' || c == '*') {
-            black |= bit(i);
-        } else if (c == 'O' || c == 'o' || c == '0') {
-            white |= bit(i);
-        }
-    }
-    const bool blackToMove = sideToMove == "Black";
-    return blackToMove ? Position{black, white} : Position{white, black};
-}
-
-} // namespace
-
 std::vector<FfoPosition> loadFfoPositions(const std::filesystem::path& path) {
     std::ifstream file(path);
     if (!file) {
@@ -44,7 +22,11 @@ std::vector<FfoPosition> loadFfoPositions(const std::filesystem::path& path) {
         std::string side;
         int bestMove = 0;
         int score = 0;
-        if (!(lineStream >> board >> side >> bestMove >> score) || board.size() != kBoardSquares) {
+        if (!(lineStream >> board >> side >> bestMove >> score)) {
+            continue;
+        }
+        const std::optional<Position> pos = Position::fromBoardString(board, side == "Black");
+        if (!pos) {
             continue;
         }
         // This source's score field is fixed to Black's perspective (a common convention for
@@ -58,7 +40,7 @@ std::vector<FfoPosition> loadFfoPositions(const std::filesystem::path& path) {
         if (side == "White") {
             score = -score;
         }
-        positions.push_back({parseBoard(board, side), bestMove, score});
+        positions.push_back({*pos, bestMove, score});
     }
     return positions;
 }

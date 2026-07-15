@@ -32,6 +32,15 @@ struct Position {
     // Standard Othello opening position, black to move (black = own).
     static Position start();
 
+    // Parses a 64-character row-wise board diagram (a1,b1,...,h1,a2,...,h8 - matching this
+    // project's own square-index convention exactly, so no reindexing happens here) with
+    // black discs as 'X'/'x'/'*', white discs as 'O'/'o'/'0', and empty squares as '-'/'.': a
+    // common interchange convention for Othello positions (used by, e.g., the FFO endgame test
+    // format - see tests/support/ffo.hpp). Returns nullopt if `board` isn't exactly 64
+    // characters. Unrecognized characters are treated as empty rather than rejected, so this
+    // stays lenient the same way squareFromString isn't picky about case.
+    static std::optional<Position> fromBoardString(std::string_view board, bool blackToMove);
+
     int ownCount() const { return std::popcount(own); }
     int oppCount() const { return std::popcount(opp); }
     int discCount() const { return ownCount() + oppCount(); }

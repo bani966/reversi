@@ -1,8 +1,10 @@
+#include "reversi/moves.hpp"
 #include "reversi/perft.hpp"
 #include "reversi/players.hpp"
 #include "reversi/position.hpp"
 #include "reversi/search.hpp"
 #include "reversi/selfplay.hpp"
+#include "reversi/solver.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -44,7 +46,9 @@ void printUsage() {
         << "  selfplay <a> <b> [games=100]   Play a match between two players and tally\n"
         << "                                 wins/losses/draws. Player specs: random, greedy,\n"
         << "                                 search:<depth>\n"
-        << "  solve                          (arrives with M5)\n";
+        << "  solve <board> <Black|White>    Exact endgame solve of the given 64-char board\n"
+        << "                                 diagram (row-wise a1..h8, X/O/-): best move,\n"
+        << "                                 exact score, nodes, elapsed time, nps\n";
 }
 
 // Parses a positive integer from argv[argIndex]; returns nullopt on anything else (missing
@@ -127,6 +131,38 @@ int main(int argc, char** argv) {
             seconds > 0.0 ? static_cast<std::uint64_t>(static_cast<double>(result.nodes) / seconds)
                           : result.nodes;
         std::cout << "depth: " << *depth << "\n"
+                  << "best move: " << reversi::squareToString(result.bestMove) << "\n"
+                  << "score: " << result.score << "\n"
+                  << "nodes: " << result.nodes << "\n"
+                  << "elapsed: " << seconds << "s\n"
+                  << "nps: " << nps << "\n";
+        return 0;
+    }
+    if (cmd == "solve") {
+        if (argc < 4) {
+            std::cerr << "Usage: reversi-cli solve <board> <Black|White>\n";
+            return 1;
+        }
+        const std::string_view side = argv[3];
+        if (side != "Black" && side != "White") {
+            std::cerr << "Usage: reversi-cli solve <board> <Black|White>\n";
+            return 1;
+        }
+        const std::optional<reversi::Position> pos =
+            reversi::Position::fromBoardString(argv[2], side == "Black");
+        if (!pos || !reversi::hasLegalMove(*pos)) {
+            std::cerr << "Invalid board: must be exactly 64 characters (X/O/-) with at least "
+                         "one legal move for the side to move\n";
+            return 1;
+        }
+        const auto t0 = std::chrono::steady_clock::now();
+        const reversi::SearchResult result = reversi::solveExact(*pos);
+        const auto t1 = std::chrono::steady_clock::now();
+        const double seconds = std::chrono::duration<double>(t1 - t0).count();
+        const std::uint64_t nps =
+            seconds > 0.0 ? static_cast<std::uint64_t>(static_cast<double>(result.nodes) / seconds)
+                          : result.nodes;
+        std::cout << "empties: " << pos->emptyCount() << "\n"
                   << "best move: " << reversi::squareToString(result.bestMove) << "\n"
                   << "score: " << result.score << "\n"
                   << "nodes: " << result.nodes << "\n"
