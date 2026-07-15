@@ -1,0 +1,15 @@
+# Build output
+build/
+
+# Machine-specific CMake presets (Qt path lives here)
+CMakeUserPresets.json
+
+# Editors / IDEs
+.vscode/
+.vs/
+.cache/
+*.user
+
+# Python (tools/)
+__pycache__/
+.venv/

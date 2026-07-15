@@ -1,0 +1,25 @@
+{
+    "version": 5,
+    "configurePresets": [
+        {
+            "name": "dev",
+            "displayName": "Local dev (MSVC + Qt)",
+            "inherits": "windows-msvc",
+            "cacheVariables": {
+                "CMAKE_PREFIX_PATH": "C:/Qt/6.8.3/msvc2022_64"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "dev", "configurePreset": "dev", "configuration": "Release" },
+        { "name": "dev-debug", "configurePreset": "dev", "configuration": "Debug" }
+    ],
+    "testPresets": [
+        {
+            "name": "dev",
+            "configurePreset": "dev",
+            "configuration": "Release",
+            "output": { "outputOnFailure": true }
+        }
+    ]
+}

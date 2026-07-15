@@ -1,0 +1,76 @@
+{
+    "version": 5,
+    "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "windows-msvc",
+            "displayName": "Windows x64 (MSVC, Visual Studio generator)",
+            "generator": "Visual Studio 17 2022",
+            "architecture": { "value": "x64" },
+            "binaryDir": "${sourceDir}/build/msvc"
+        },
+        {
+            "name": "unix-release",
+            "displayName": "Unix Release (default generator)",
+            "binaryDir": "${sourceDir}/build/release",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+        },
+        {
+            "name": "ci-windows",
+            "inherits": "windows-msvc",
+            "cacheVariables": { "REVERSI_WERROR": "ON" }
+        },
+        {
+            "name": "ci-macos",
+            "inherits": "unix-release",
+            "cacheVariables": { "REVERSI_WERROR": "ON" }
+        },
+        {
+            "name": "ci-linux",
+            "inherits": "unix-release",
+            "cacheVariables": {
+                "REVERSI_WERROR": "ON",
+                "REVERSI_BUILD_APP": "OFF"
+            }
+        },
+        {
+            "name": "ci-linux-sanitize",
+            "inherits": "ci-linux",
+            "binaryDir": "${sourceDir}/build/sanitize",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "ci-windows", "configurePreset": "ci-windows", "configuration": "Release" },
+        { "name": "ci-macos", "configurePreset": "ci-macos" },
+        { "name": "ci-linux", "configurePreset": "ci-linux" },
+        { "name": "ci-linux-sanitize", "configurePreset": "ci-linux-sanitize" }
+    ],
+    "testPresets": [
+        {
+            "name": "ci-windows",
+            "configurePreset": "ci-windows",
+            "configuration": "Release",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ci-macos",
+            "configurePreset": "ci-macos",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ci-linux",
+            "configurePreset": "ci-linux",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ci-linux-sanitize",
+            "configurePreset": "ci-linux-sanitize",
+            "output": { "outputOnFailure": true }
+        }
+    ]
+}

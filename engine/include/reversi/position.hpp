@@ -1,0 +1,48 @@
+#pragma once
+
+#include <bit>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+
+namespace reversi {
+
+// Board representation convention, fixed for the whole project:
+// bit i corresponds to the square with file = i % 8 (a..h) and rank = i / 8 (1..8),
+// so bit 0 = a1 and bit 63 = h8.
+using Bitboard = std::uint64_t;
+
+constexpr int kBoardSquares = 64;
+
+constexpr Bitboard bit(int square) {
+    return Bitboard{1} << square;
+}
+
+constexpr int squareIndex(int file, int rank) {
+    return rank * 8 + file;
+}
+
+// A position is stored relative to the side to move: `own` holds the mover's discs.
+// This is the convention the search operates in; colors are a GUI-level concept.
+struct Position {
+    Bitboard own = 0;
+    Bitboard opp = 0;
+
+    // Standard Othello opening position, black to move (black = own).
+    static Position start();
+
+    int ownCount() const { return std::popcount(own); }
+    int oppCount() const { return std::popcount(opp); }
+    int discCount() const { return ownCount() + oppCount(); }
+    Bitboard occupied() const { return own | opp; }
+    Bitboard empty() const { return ~occupied(); }
+};
+
+// Converts a square index to lowercase algebraic notation ("a1".."h8").
+std::string squareToString(int square);
+
+// Parses algebraic notation (case-insensitive); returns nullopt on invalid input.
+std::optional<int> squareFromString(std::string_view s);
+
+} // namespace reversi

@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format-18
+      - name: Check formatting
+        run: git ls-files '*.cpp' '*.hpp' | xargs clang-format-18 --dry-run --Werror
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          arch: win64_msvc2022_64
+          modules: qtmultimedia
+          cache: true
+      - name: Configure
+        run: cmake --preset ci-windows
+      - name: Build
+        run: cmake --build --preset ci-windows
+      - name: Test
+        run: ctest --preset ci-windows
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          arch: clang_64
+          modules: qtmultimedia
+          cache: true
+      - name: Configure
+        run: cmake --preset ci-macos
+      - name: Build
+        run: cmake --build --preset ci-macos --parallel
+      - name: Test
+        run: ctest --preset ci-macos
+
+  linux:
+    # Engine + CLI + tests only; no Qt on Linux keeps this job fast.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset ci-linux
+      - name: Build
+        run: cmake --build --preset ci-linux --parallel
+      - name: Test
+        run: ctest --preset ci-linux
+
+  sanitize:
+    # ASan + UBSan over the full test suite. A TSan job joins this at M8 (Lazy SMP).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset ci-linux-sanitize
+      - name: Build
+        run: cmake --build --preset ci-linux-sanitize --parallel
+      - name: Test
+        run: ctest --preset ci-linux-sanitize
