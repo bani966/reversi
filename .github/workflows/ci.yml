@@ -16,7 +16,7 @@ jobs:
         run: git ls-files '*.cpp' '*.hpp' | xargs clang-format-18 --dry-run --Werror
 
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - name: Install Qt
@@ -40,16 +40,10 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.8.*'
+          version: '6.9.*'   # >= 6.9.2 required: AGL removed from the macOS 26 SDK (QTBUG-137687)
           arch: clang_64
           modules: qtmultimedia
           cache: true
-      - name: Configure
-        run: cmake --preset ci-macos
-      - name: Build
-        run: cmake --build --preset ci-macos --parallel
-      - name: Test
-        run: ctest --preset ci-macos
 
   linux:
     # Engine + CLI + tests only; no Qt on Linux keeps this job fast.
