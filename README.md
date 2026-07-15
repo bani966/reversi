@@ -4,7 +4,9 @@ A Reversi/Othello desktop application: a bitboard engine in pure C++20 with alph
 search, a perfect-play endgame solver, a WTHOR-trained pattern evaluation with
 Multi-ProbCut, and a minimalist Qt 6 Widgets GUI with live engine analysis.
 
-**Status: M0 — project scaffolding.** Nothing playable yet.
+**Status: M1 — rules core complete.** Perft verified against published values through ply 8,
+differential fuzzing vs. a naive reference implementation passes, all CI jobs green. Nothing
+playable yet — no search or GUI board interaction.
 
 ## Layout
 
@@ -42,8 +44,8 @@ ctest --preset ci-linux
 
 | Milestone | Scope | Exit criterion |
 |---|---|---|
-| M0 | Scaffolding, CI | CI green on Windows/macOS/Linux; formatting enforced |
-| M1 | Rules core | Perft matches published values; differential fuzz vs naive reference passes |
+| M0 (done) | Scaffolding, CI | CI green on Windows/macOS/Linux; formatting enforced |
+| M1 (done) | Rules core | Perft matches published values; differential fuzz vs naive reference passes |
 | M2 | Baseline engine | Alpha-beta + simple eval; beats random and greedy 100–0 |
 | M3 | GUI MVP | Playable HvH/HvAI; engine on worker thread, cancelable |
 | M4 | Search maturity | Iterative deepening, TT, PVS, ordering, time control; large self-play gain vs M2 |
