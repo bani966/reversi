@@ -24,11 +24,13 @@ add_executable(engine_tests
     engine/exit_criterion_m4_test.cpp
     engine/solver_test.cpp
     engine/solver_ordering_test.cpp
+    engine/solver_tt_test.cpp
     engine/players_test.cpp
     engine/selfplay_test.cpp
     support/baseline_search.cpp
     support/baseline_solver.cpp
     support/benchmark_positions.cpp
+    support/endgame_positions.cpp
     support/naive_reference.cpp
     support/search_checks.cpp
 )

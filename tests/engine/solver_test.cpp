@@ -1,39 +1,14 @@
 #include "reversi/solver.hpp"
 
+#include "../support/endgame_positions.hpp"
 #include "reversi/cancellation.hpp"
-#include "reversi/moves.hpp"
-#include "reversi/players.hpp"
 #include "reversi/search.hpp"
 
 #include <gtest/gtest.h>
-#include <random>
 #include <vector>
 
 namespace reversi {
 namespace {
-
-// Fixed-seed random playout collecting every position reached with `minEmpty`..`maxEmpty`
-// empty squares (inclusive), skipping any where the mover has no legal move (both solveExact
-// and search() share the precondition hasLegalMove(p) - the caller applies forced passes
-// itself). Deterministic and self-contained, mirroring benchmark_positions.cpp's approach but
-// targeting the near-endgame range that benchmark_positions.cpp's ply-based sampling doesn't
-// reliably reach.
-std::vector<Position> collectPositionsByEmptyCount(unsigned seed, int minEmpty, int maxEmpty) {
-    std::vector<Position> positions;
-    std::mt19937 rng(seed);
-    Position p = Position::start();
-    while (!isGameOver(p)) {
-        if (!hasLegalMove(p)) {
-            p = applyPass(p);
-            continue;
-        }
-        if (p.emptyCount() >= minEmpty && p.emptyCount() <= maxEmpty) {
-            positions.push_back(p);
-        }
-        p = applyMove(p, pickRandomMove(p, rng));
-    }
-    return positions;
-}
 
 // The core correctness proof for M5 step 1, enabled by a fact established while planning: since
 // evaluateDiscDifferential and terminalScore are byte-identical, and search()'s depth counts
@@ -47,7 +22,7 @@ std::vector<Position> collectPositionsByEmptyCount(unsigned seed, int minEmpty, 
 TEST(Solver, MatchesSearchAtDepthEqualsEmptyCountOnSmallEndgamePositions) {
     std::vector<Position> positions;
     for (const unsigned seed : {101u, 202u, 303u}) {
-        const auto sample = collectPositionsByEmptyCount(seed, 1, 10);
+        const auto sample = endgame::collectPositionsByEmptyCount(seed, 1, 10);
         positions.insert(positions.end(), sample.begin(), sample.end());
     }
     ASSERT_GE(positions.size(), std::size_t{15});
@@ -84,7 +59,7 @@ TEST(Solver, CancellationStopsPromptlyAndMarksResultIncomplete) {
 
 TEST(Solver, NodesAreCountedAndPositive) {
     // A late-game position (few empties) so this stays fast without needing cancellation.
-    const auto sample = collectPositionsByEmptyCount(404u, 6, 8);
+    const auto sample = endgame::collectPositionsByEmptyCount(404u, 6, 8);
     ASSERT_FALSE(sample.empty());
     const SearchResult result = solveExact(sample.front());
     EXPECT_GT(result.nodes, std::uint64_t{0});

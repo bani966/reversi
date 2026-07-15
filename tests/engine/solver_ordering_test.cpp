@@ -1,13 +1,11 @@
 #include "reversi/solver.hpp"
 
 #include "../support/baseline_solver.hpp"
-#include "reversi/moves.hpp"
-#include "reversi/players.hpp"
+#include "../support/endgame_positions.hpp"
 #include "reversi/position.hpp"
 
 #include <cstdint>
 #include <gtest/gtest.h>
-#include <random>
 #include <vector>
 
 namespace reversi {
@@ -53,25 +51,6 @@ TEST(OddParitySquares, EmptyInputIsEmptyOutput) {
     EXPECT_EQ(oddParitySquares(Bitboard{0}), Bitboard{0});
 }
 
-namespace {
-std::vector<Position> collectPositionsByEmptyCount(unsigned seed, int minEmpty, int maxEmpty) {
-    std::vector<Position> positions;
-    std::mt19937 rng(seed);
-    Position p = Position::start();
-    while (!isGameOver(p)) {
-        if (!hasLegalMove(p)) {
-            p = applyPass(p);
-            continue;
-        }
-        if (p.emptyCount() >= minEmpty && p.emptyCount() <= maxEmpty) {
-            positions.push_back(p);
-        }
-        p = applyMove(p, pickRandomMove(p, rng));
-    }
-    return positions;
-}
-} // namespace
-
 // The step-2 correctness contract, per plan: ordering must never change the answer. Checked
 // against baseline::solveExact (tests/support/baseline_solver.*, a frozen snapshot of the
 // plain-ordered M5-step-1 solver) rather than reversi::search(), since baseline::solveExact is
@@ -80,7 +59,7 @@ std::vector<Position> collectPositionsByEmptyCount(unsigned seed, int minEmpty, 
 TEST(SolverOrdering, ScoreMatchesPreOrderingBaselineAndPrunesMeasurably) {
     std::vector<Position> positions;
     for (const unsigned seed : {11u, 22u, 33u, 44u}) {
-        const auto sample = collectPositionsByEmptyCount(seed, 8, 12);
+        const auto sample = endgame::collectPositionsByEmptyCount(seed, 8, 12);
         positions.insert(positions.end(), sample.begin(), sample.end());
     }
     ASSERT_GE(positions.size(), std::size_t{10});
