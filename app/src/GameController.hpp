@@ -62,6 +62,10 @@ private:
     bool lastMoveHighlightEnabled_ = false;
 
     std::thread aiThread_;
+    // Owned here, used by the worker thread during a search; see startAiSearch for why the
+    // raw-pointer handoff is safe. unique_ptr rather than a value so the header doesn't need
+    // the table's size decision (it lives with the other AI constants in the .cpp).
+    std::unique_ptr<reversi::TranspositionTable> tt_;
     std::shared_ptr<reversi::CancellationToken> cancellation_;
     // Bumped on every new search and every cancellation, so a result that arrives after being
     // superseded (by a new search or a new game) can be recognized as stale and discarded even

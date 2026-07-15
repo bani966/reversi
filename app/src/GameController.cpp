@@ -6,11 +6,22 @@
 #include <QMetaObject>
 
 namespace {
-// Matches M2's measured/validated depth (100/100 vs greedy, 97/100 vs random in self-play).
-constexpr int kAiSearchDepth = 10;
+// M4: the AI thinks on a wall-clock budget via iterative deepening rather than a fixed
+// depth - consistent response time for the user regardless of game phase, and much deeper
+// search than M2's fixed depth 10 in the same time. The depth cap is a safety net for
+// trivially-solvable late endgames, not the usual stopping reason.
+constexpr int kAiMaxSearchDepth = 24;
+constexpr reversi::TimeBudget kAiTimeBudget{std::chrono::milliseconds{800},
+                                            std::chrono::milliseconds{2500}};
+// 2^20 entries (~24 MB). Reused across the AI's moves within one game (cleared on newGame):
+// entries from earlier searches stay valid - keys are full positions, stored depths are
+// remaining-depth - and pre-warm both cutoffs and move ordering for later searches.
+constexpr std::size_t kTranspositionTableEntries = std::size_t{1} << 20;
 } // namespace
 
-GameController::GameController(QObject* parent) : QObject(parent) {}
+GameController::GameController(QObject* parent)
+    : QObject(parent),
+      tt_(std::make_unique<reversi::TranspositionTable>(kTranspositionTableEntries)) {}
 
 GameController::~GameController() {
     cancelAiSearch();
@@ -29,7 +40,8 @@ bool GameController::isHumanTurn() const {
 }
 
 void GameController::newGame(GameMode mode) {
-    cancelAiSearch();
+    cancelAiSearch(); // joins the worker first, so clearing the table below is race-free
+    tt_->clear();     // entries describe the previous game's positions; don't carry them over
     mode_ = mode;
     pos_ = reversi::Position::start();
     blackToMove_ = true;
@@ -96,9 +108,13 @@ void GameController::startAiSearch() {
     const std::shared_ptr<reversi::CancellationToken> cancellationCopy = cancellation_;
     const reversi::Position posCopy = pos_;
 
-    aiThread_ = std::thread([this, posCopy, myGeneration, cancellationCopy] {
-        const reversi::SearchResult result = reversi::search(
-            posCopy, kAiSearchDepth, reversi::evaluateDiscDifferential, cancellationCopy.get());
+    // tt_ is captured raw: the worker only touches it while running, and every path that
+    // mutates or destroys tt_ (newGame, destructor) joins the worker via cancelAiSearch first.
+    reversi::TranspositionTable* const tt = tt_.get();
+    aiThread_ = std::thread([this, posCopy, myGeneration, cancellationCopy, tt] {
+        const reversi::SearchResult result =
+            reversi::searchTimed(posCopy, kAiMaxSearchDepth, kAiTimeBudget,
+                                 reversi::evaluateDiscDifferential, cancellationCopy.get(), tt);
         QMetaObject::invokeMethod(
             this, [this, result, myGeneration] { onAiSearchFinished(result, myGeneration); },
             Qt::QueuedConnection);

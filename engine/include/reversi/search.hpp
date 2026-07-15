@@ -5,6 +5,7 @@
 #include "reversi/position.hpp"
 #include "reversi/tt.hpp"
 
+#include <chrono>
 #include <cstdint>
 
 namespace reversi {
@@ -63,10 +64,46 @@ SearchResult search(const Position& p, int depth, const EvalFn& eval = evaluateD
 // `completed` is true iff at least the depth-1 iteration finished, i.e. iff bestMove/score
 // are trustworthy. A `tt` passed here is deliberately shared across iterations (the intended
 // hot path — see tt.hpp); the same never-changes-the-answer contract as search()'s applies.
+// From depth 2 on, each iteration first tries an aspiration window centered on the previous
+// iteration's score (see search.cpp's kAspirationDelta); a result that fails the window is
+// treated as the bound it is — never trusted as an answer — and re-searched full-window, so
+// the returned score is always exact (asserted against fixed-depth search by tests).
 // Same precondition as search(): hasLegalMove(p).
 SearchResult searchIterative(const Position& p, int maxDepth,
                              const EvalFn& eval = evaluateDiscDifferential,
                              const CancellationToken* cancellation = nullptr,
                              TranspositionTable* tt = nullptr);
+
+// Root search over an explicit (alpha, beta) window — the primitive underneath aspiration
+// windows, exposed so the fail-high/fail-low paths are directly testable. If the true value
+// lies strictly inside (alpha, beta), the result is exact and bestMove provably achieves it.
+// Otherwise the search FAILED the window and the result is only a bound: score <= alpha
+// means the true value is <= score (fail low), score >= beta means it is >= score (fail
+// high), and bestMove must NOT be trusted (on a fail-low it is whichever move was probed
+// first, not a validated choice). Callers must widen and re-search before acting on a failed
+// window — searchIterative does exactly that. search(p, depth, ...) is this with the full
+// (-inf, +inf) window.
+SearchResult searchWindow(const Position& p, int depth, int alpha, int beta,
+                          const EvalFn& eval = evaluateDiscDifferential,
+                          const CancellationToken* cancellation = nullptr,
+                          TranspositionTable* tt = nullptr);
+
+struct TimeBudget {
+    // Soft limit: once elapsed, no NEW iteration is started (an iteration in flight runs on).
+    std::chrono::milliseconds soft{0};
+    // Hard limit: the search aborts outright mid-iteration (checked every few thousand
+    // nodes); the deepest fully-completed iteration's result stands. Must be >= soft.
+    std::chrono::milliseconds hard{0};
+};
+
+// searchIterative driven by wall-clock time instead of only a depth cap: iterates up to
+// maxDepth but stops early per `budget`. Running out of time is normal operation here, not
+// cancellation — the result still has completed == true as long as at least the depth-1
+// iteration finished (with a non-trivial budget it always does; depth 1 costs microseconds).
+// `cancellation` still works on top for external aborts (e.g. the GUI closing mid-search).
+SearchResult searchTimed(const Position& p, int maxDepth, const TimeBudget& budget,
+                         const EvalFn& eval = evaluateDiscDifferential,
+                         const CancellationToken* cancellation = nullptr,
+                         TranspositionTable* tt = nullptr);
 
 } // namespace reversi

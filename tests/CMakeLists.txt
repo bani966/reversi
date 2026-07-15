@@ -20,6 +20,7 @@ add_executable(engine_tests
     engine/search_iterative_test.cpp
     engine/tt_test.cpp
     engine/ordering_test.cpp
+    engine/aspiration_test.cpp
     engine/players_test.cpp
     engine/selfplay_test.cpp
     support/baseline_search.cpp
