@@ -4,7 +4,11 @@
 find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia)
 qt_standard_project_setup()
 
-qt_add_executable(reversi-app src/main.cpp)
+qt_add_executable(reversi-app
+    src/main.cpp
+    src/MainWindow.cpp
+    src/BoardWidget.cpp
+)
 
 target_link_libraries(reversi-app PRIVATE
     reversi::engine
