@@ -14,6 +14,14 @@ time; do not start features from later milestones without being asked.
 - The board is 8x8 only. Bitboard convention (fixed): bit i = square with
   file = i % 8 (a..h), rank = i / 8 (1..8); bit 0 = a1, bit 63 = h8.
   Notation helpers live in `engine/include/reversi/position.hpp` — reuse them.
+- A `TranspositionTable` must never be shared between `solveExact()` (the exact endgame
+  solver, `engine/include/reversi/solver.hpp`) and `search()`/`searchIterative()`/
+  `searchTimed()` (the heuristic search, `engine/include/reversi/search.hpp`). Both encode
+  `Bound::Exact/Lower/Upper` the same way, but `search()`'s `Bound::Exact` only means "exact
+  at the depth reached" (a lower bound on the true game value), while `solveExact()`'s means
+  the actual final result — a table shared between the two would let the solver trust a
+  heuristic-search entry as if it were exact, silently corrupting an otherwise-perfect solve.
+  Give each mode its own table. (Full reasoning in `solver.hpp`'s doc comment on `tt`.)
 
 ## Build & test (local Windows, MSVC)
 
