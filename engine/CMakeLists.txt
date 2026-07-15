@@ -1,6 +1,7 @@
 # Pure C++20 static library. Must never depend on Qt or any platform-specific API.
 add_library(reversi_engine STATIC
     src/position.cpp
+    src/moves.cpp
 )
 add_library(reversi::engine ALIAS reversi_engine)
 

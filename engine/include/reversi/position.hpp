@@ -39,6 +39,10 @@ struct Position {
     Bitboard empty() const { return ~occupied(); }
 };
 
+constexpr bool operator==(const Position& a, const Position& b) {
+    return a.own == b.own && a.opp == b.opp;
+}
+
 // Converts a square index to lowercase algebraic notation ("a1".."h8").
 std::string squareToString(int square);
 

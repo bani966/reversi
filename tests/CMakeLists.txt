@@ -12,6 +12,7 @@ FetchContent_MakeAvailable(googletest)
 add_executable(engine_tests
     engine/position_test.cpp
     engine/naive_reference_test.cpp
+    engine/moves_test.cpp
     support/naive_reference.cpp
 )
 target_link_libraries(engine_tests PRIVATE reversi::engine GTest::gtest_main reversi_warnings)
