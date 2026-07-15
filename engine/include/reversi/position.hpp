@@ -37,6 +37,9 @@ struct Position {
     int discCount() const { return ownCount() + oppCount(); }
     Bitboard occupied() const { return own | opp; }
     Bitboard empty() const { return ~occupied(); }
+    // The exact endgame solver's search depth: search(pos, emptyCount(), ...) already reaches
+    // every leaf via the game-over branch (see solver.hpp), never the heuristic eval fallback.
+    int emptyCount() const { return std::popcount(empty()); }
 };
 
 constexpr bool operator==(const Position& a, const Position& b) {

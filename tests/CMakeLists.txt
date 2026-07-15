@@ -22,6 +22,7 @@ add_executable(engine_tests
     engine/ordering_test.cpp
     engine/aspiration_test.cpp
     engine/exit_criterion_m4_test.cpp
+    engine/solver_test.cpp
     engine/players_test.cpp
     engine/selfplay_test.cpp
     support/baseline_search.cpp
