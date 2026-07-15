@@ -1,5 +1,7 @@
 #include "BoardWidget.hpp"
 
+#include "Palette.hpp"
+
 #include <QMouseEvent>
 #include <QPainter>
 #include <QResizeEvent>
@@ -9,8 +11,11 @@ namespace {
 constexpr int kBoardSquares = 8;
 
 // Named color roles, defined once here rather than as literals scattered through paintEvent.
-// M9's theme toggle will turn this into a swappable light/dark pair instead of a fixed
-// constant; nothing below needs to change except where this struct's values come from.
+// windowBackground/coordinateTextColor come from the shared chrome::palette() (also used by
+// MainWindow's menu/status/title bar) so the two can't drift out of sync; the rest are
+// board-specific (felt green, disc fills, grid lines) and have no other consumer, so they stay
+// local. M9's theme toggle will turn this into a swappable light/dark pair instead of a fixed
+// constant; nothing below needs to change except where these values come from.
 struct BoardPalette {
     QColor windowBackground; // letterbox color when the widget isn't square
     QColor boardColor;
@@ -29,10 +34,10 @@ const BoardPalette& boardPalette() {
     // gridlines on top of one continuous field, off-white/near-black discs (not pure #fff/
     // #000) each with a subtle border for definition.
     static const BoardPalette kPalette{
-        .windowBackground = QColor(24, 24, 26),
+        .windowBackground = chrome::palette().windowBackground,
         .boardColor = QColor(66, 116, 72),
         .gridLineColor = QColor(235, 238, 230, 50),
-        .coordinateTextColor = QColor(240, 230, 210, 250), // warm cream, high contrast on the felt
+        .coordinateTextColor = chrome::palette().textColor,
         .blackDiscFill = QColor(26, 26, 28),
         .blackDiscBorder = QColor(58, 58, 62),
         .whiteDiscFill = QColor(242, 236, 224),
