@@ -4,9 +4,13 @@ A Reversi/Othello desktop application: a bitboard engine in pure C++20 with alph
 search, a perfect-play endgame solver, a WTHOR-trained pattern evaluation with
 Multi-ProbCut, and a minimalist Qt 6 Widgets GUI with live engine analysis.
 
-**Status: M1 — rules core complete.** Perft verified against published values through ply 8,
-differential fuzzing vs. a naive reference implementation passes, all CI jobs green. Nothing
-playable yet — no search or GUI board interaction.
+**Status: M2 — baseline engine complete.** Negamax + fail-soft alpha-beta verified correct
+against unpruned minimax on cross-check positions. Self-play with a disc-differential
+evaluation at depth 10: 100/100 vs. greedy, 97/100 vs. random. The 3 losses to random are not
+a search bug — disc-differential is a well-known weak Othello heuristic (it ignores mobility
+and positional control, e.g. corner/edge value), and a bounded-depth search executes a weak
+eval well rather than a strong one poorly. Addressed at M6 (WTHOR-trained pattern evaluation).
+Nothing playable yet — no GUI board interaction.
 
 ## Layout
 
@@ -46,7 +50,7 @@ ctest --preset ci-linux
 |---|---|---|
 | M0 (done) | Scaffolding, CI | CI green on Windows/macOS/Linux; formatting enforced |
 | M1 (done) | Rules core | Perft matches published values; differential fuzz vs naive reference passes |
-| M2 | Baseline engine | Alpha-beta + simple eval; beats random and greedy 100–0 |
+| M2 (done) | Baseline engine | Alpha-beta + simple eval; beats random and greedy 100–0 |
 | M3 | GUI MVP | Playable HvH/HvAI; engine on worker thread, cancelable |
 | M4 | Search maturity | Iterative deepening, TT, PVS, ordering, time control; large self-play gain vs M2 |
 | M5 | Endgame solver | FFO test positions solved with correct exact scores |
