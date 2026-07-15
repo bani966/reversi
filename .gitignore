@@ -13,3 +13,6 @@ CMakeUserPresets.json
 # Python (tools/)
 __pycache__/
 .venv/
+
+#Sensitive information
+.project-related
