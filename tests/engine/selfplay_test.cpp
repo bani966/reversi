@@ -65,8 +65,8 @@ TEST(Selfplay, SmokeVsRandomAndGreedy) {
 // M2's exit criterion. GoogleTest skips DISABLED_ tests by default, so these don't slow down
 // routine `ctest --preset dev` runs; run them on demand (each takes several minutes with no
 // move ordering yet) via:
-//   build/msvc/tests/Release/engine_tests.exe --gtest_filter=*ExitCriterion* \
-//       --gtest_also_run_disabled_tests
+//   build/msvc/tests/Release/engine_tests.exe --gtest_filter=*ExitCriterion*
+//   --gtest_also_run_disabled_tests
 //
 // vs greedy: search(depth=10) wins literally 100/100, measured.
 TEST(Selfplay, DISABLED_ExitCriterion100VsGreedy) {
