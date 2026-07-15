@@ -1,8 +1,9 @@
 #include "MainWindow.hpp"
 
 #include "BoardWidget.hpp"
+#include "GameController.hpp"
 
-#include "reversi/position.hpp"
+#include <QStatusBar>
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     board_ = new BoardWidget(this);
@@ -10,9 +11,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle(QStringLiteral("Reversi"));
     resize(720, 760);
 
-    const reversi::Position start = reversi::Position::start();
-    BoardWidget::DisplayState state;
-    state.blackDiscs = start.own; // black moves first, so own == black at the start position
-    state.whiteDiscs = start.opp;
-    board_->setDisplayState(state);
+    controller_ = new GameController(this);
+    connect(controller_, &GameController::boardChanged, board_, &BoardWidget::setDisplayState);
+    connect(board_, &BoardWidget::squareClicked, controller_, &GameController::onSquareClicked);
+    connect(controller_, &GameController::statusChanged, this,
+            [this](const QString& text) { statusBar()->showMessage(text); });
+
+    controller_->newGame(GameController::GameMode::HumanVsHuman);
 }

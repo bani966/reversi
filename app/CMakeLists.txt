@@ -8,6 +8,7 @@ qt_add_executable(reversi-app
     src/main.cpp
     src/MainWindow.cpp
     src/BoardWidget.cpp
+    src/GameController.cpp
 )
 
 target_link_libraries(reversi-app PRIVATE

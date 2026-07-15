@@ -3,6 +3,7 @@
 #include <QMainWindow>
 
 class BoardWidget;
+class GameController;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -12,4 +13,5 @@ public:
 
 private:
     BoardWidget* board_;
+    GameController* controller_;
 };
