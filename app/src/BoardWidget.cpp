@@ -11,11 +11,12 @@ namespace {
 constexpr int kBoardSquares = 8;
 
 // Named color roles, defined once here rather than as literals scattered through paintEvent.
-// windowBackground/coordinateTextColor come from the shared chrome::palette() (also used by
-// MainWindow's menu/status/title bar) so the two can't drift out of sync; the rest are
-// board-specific (felt green, disc fills, grid lines) and have no other consumer, so they stay
-// local. M9's theme toggle will turn this into a swappable light/dark pair instead of a fixed
-// constant; nothing below needs to change except where these values come from.
+// windowBackground/coordinateTextColor/lastMoveHighlightColor come from the shared
+// chrome::palette() (also used by MainWindow's menu/status/title bar) so they can't drift out
+// of sync; the rest are board-specific (felt green, disc fills, grid lines) and have no other
+// consumer, so they stay local. M9's theme toggle will turn this into a swappable light/dark
+// pair instead of a fixed constant; nothing below needs to change except where these values
+// come from.
 struct BoardPalette {
     QColor windowBackground; // letterbox color when the widget isn't square
     QColor boardColor;
@@ -26,6 +27,7 @@ struct BoardPalette {
     QColor whiteDiscFill;
     QColor whiteDiscBorder;
     QColor legalMoveHighlightColor;
+    QColor lastMoveHighlightColor;
 };
 
 const BoardPalette& boardPalette() {
@@ -43,6 +45,7 @@ const BoardPalette& boardPalette() {
         .whiteDiscFill = QColor(242, 236, 224),
         .whiteDiscBorder = QColor(178, 168, 150),
         .legalMoveHighlightColor = QColor(255, 255, 255, 70),
+        .lastMoveHighlightColor = chrome::palette().lastMoveHighlightColor,
     };
     return kPalette;
 }
@@ -166,6 +169,13 @@ void BoardWidget::paintEvent(QPaintEvent*) {
             const reversi::Bitboard mask = reversi::bit(square);
             const QRect cell(boardOrigin_.x() + file * cellSize_,
                              boardOrigin_.y() + rank * cellSize_, cellSize_, cellSize_);
+
+            // Drawn before the disc/highlight below so it sits underneath as a tint on the
+            // square, not a shape competing with the disc for attention.
+            if (square == state_.lastMoveSquare) {
+                painter.fillRect(cell, theme.lastMoveHighlightColor);
+            }
+
             if ((state_.blackDiscs & mask) != 0) {
                 painter.setPen(QPen(theme.blackDiscBorder, discBorderWidth));
                 painter.setBrush(theme.blackDiscFill);

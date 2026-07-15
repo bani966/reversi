@@ -16,6 +16,7 @@ public:
         reversi::Bitboard blackDiscs = 0;
         reversi::Bitboard whiteDiscs = 0;
         reversi::Bitboard legalMoveHighlights = 0; // empty when it isn't a human's turn to click
+        int lastMoveSquare = -1; // most recently played square, or -1 before the first move
     };
 
     explicit BoardWidget(QWidget* parent = nullptr);

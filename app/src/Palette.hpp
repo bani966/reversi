@@ -16,6 +16,7 @@ struct Palette {
     QColor panelHover;       // hover/selected/pressed state on menu items and title bar buttons
     QColor panelBorder;      // thin borders/separators
     QColor textColor;        // warm cream, shared by coordinate labels and all chrome text
+    QColor lastMoveHighlightColor; // low-opacity amber tint under the most recently played disc
 };
 
 const Palette& palette();

@@ -50,6 +50,10 @@ private:
     reversi::Position pos_;
     bool blackToMove_ = true;
     GameMode mode_ = GameMode::HumanVsHuman;
+    // Square of the most recently played move, -1 before the first move of a game. Not reset
+    // on a forced pass (a pass doesn't change the board, so the last real move stays the most
+    // relevant thing to highlight) - only newGame() and a fresh applyMove() touch this.
+    int lastMoveSquare_ = -1;
 
     std::thread aiThread_;
     std::shared_ptr<reversi::CancellationToken> cancellation_;

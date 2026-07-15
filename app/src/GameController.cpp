@@ -33,6 +33,7 @@ void GameController::newGame(GameMode mode) {
     mode_ = mode;
     pos_ = reversi::Position::start();
     blackToMove_ = true;
+    lastMoveSquare_ = -1;
     advanceTurn();
 }
 
@@ -56,6 +57,7 @@ void GameController::onSquareClicked(int square) {
     }
     pos_ = reversi::applyMove(pos_, square);
     blackToMove_ = !blackToMove_;
+    lastMoveSquare_ = square;
     advanceTurn();
 }
 
@@ -104,6 +106,7 @@ void GameController::onAiSearchFinished(const reversi::SearchResult& result, int
     }
     pos_ = reversi::applyMove(pos_, result.bestMove);
     blackToMove_ = !blackToMove_;
+    lastMoveSquare_ = result.bestMove;
     advanceTurn();
 }
 
@@ -114,6 +117,7 @@ void GameController::emitBoardState() {
     state.legalMoveHighlights = (!reversi::isGameOver(pos_) && isHumanTurn())
                                     ? reversi::legalMoves(pos_)
                                     : reversi::Bitboard{0};
+    state.lastMoveSquare = lastMoveSquare_;
     emit boardChanged(state);
 }
 
