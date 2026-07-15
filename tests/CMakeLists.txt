@@ -14,6 +14,7 @@ add_executable(engine_tests
     engine/naive_reference_test.cpp
     engine/moves_test.cpp
     engine/differential_test.cpp
+    engine/perft_test.cpp
     support/naive_reference.cpp
 )
 target_link_libraries(engine_tests PRIVATE reversi::engine GTest::gtest_main reversi_warnings)

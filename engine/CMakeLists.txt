@@ -2,6 +2,7 @@
 add_library(reversi_engine STATIC
     src/position.cpp
     src/moves.cpp
+    src/perft.cpp
 )
 add_library(reversi::engine ALIAS reversi_engine)
 
