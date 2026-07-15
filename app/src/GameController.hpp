@@ -36,6 +36,11 @@ public:
     // mechanism behind "closing the window while the AI is thinking must not hang or crash".
     void cancelAiSearch();
 
+    // Off by default: no Settings UI exists yet to expose this (that's M9's job), so the
+    // control point is here now but nothing calls it yet. lastMoveSquare_ is still tracked
+    // unconditionally either way - only whether it's exposed via DisplayState is gated.
+    void setLastMoveHighlightEnabled(bool enabled);
+
 public slots:
     void onSquareClicked(int square);
 
@@ -54,6 +59,7 @@ private:
     // on a forced pass (a pass doesn't change the board, so the last real move stays the most
     // relevant thing to highlight) - only newGame() and a fresh applyMove() touch this.
     int lastMoveSquare_ = -1;
+    bool lastMoveHighlightEnabled_ = false;
 
     std::thread aiThread_;
     std::shared_ptr<reversi::CancellationToken> cancellation_;

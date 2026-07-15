@@ -37,6 +37,11 @@ void GameController::newGame(GameMode mode) {
     advanceTurn();
 }
 
+void GameController::setLastMoveHighlightEnabled(bool enabled) {
+    lastMoveHighlightEnabled_ = enabled;
+    emitBoardState(); // reflect the change immediately rather than waiting for the next move
+}
+
 void GameController::cancelAiSearch() {
     if (cancellation_) {
         cancellation_->requestStop();
@@ -117,7 +122,7 @@ void GameController::emitBoardState() {
     state.legalMoveHighlights = (!reversi::isGameOver(pos_) && isHumanTurn())
                                     ? reversi::legalMoves(pos_)
                                     : reversi::Bitboard{0};
-    state.lastMoveSquare = lastMoveSquare_;
+    state.lastMoveSquare = lastMoveHighlightEnabled_ ? lastMoveSquare_ : -1;
     emit boardChanged(state);
 }
 

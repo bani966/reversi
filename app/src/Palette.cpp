@@ -11,7 +11,7 @@ const Palette& palette() {
         .textColor = QColor(240, 230, 210, 250),
         // chess.com's convention: a soft tint under the square, not a solid fill, so it sits
         // beneath the disc without competing with it for attention.
-        .lastMoveHighlightColor = QColor(240, 216, 130, 80),
+        .lastMoveHighlightColor = QColor(240, 216, 130, 46),
     };
     return kPalette;
 }
