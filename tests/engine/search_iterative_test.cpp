@@ -14,10 +14,11 @@ namespace {
 // algorithmic one, so at a given final depth its chosen move and score must exactly match
 // plain fixed-depth alpha-beta on the same position (the M4 analogue of M2's
 // alpha-beta-vs-unpruned-negamax cross-check). Strict move equality (not just score) is
-// deliberate and valid here because ID's final iteration visits root moves in the identical
-// order fixed-depth search does; once move ordering lands (M4 step 3), tie-breaking among
-// equal-scoring moves may legitimately shift and this check is expected to be relaxed to
-// "identical score + returned move provably achieves it".
+// deliberate and remains valid even after M4 step 3's move ordering: killers/history are
+// rebuilt fresh inside every search() call, so without a TT nothing carries over between
+// iterations and ID's final iteration is literally the same invocation as the fixed-depth
+// call. (With a shared TT, hints DO carry over and shift tie-breaks - that path is covered
+// with the appropriately relaxed check in tt_test.cpp instead.)
 TEST(IterativeSearch, MatchesFixedDepthExactlyOnBenchmarkSet) {
     ASSERT_GE(bench::benchmarkPositions().size(), std::size_t{15});
     for (const Position& pos : bench::benchmarkPositions()) {

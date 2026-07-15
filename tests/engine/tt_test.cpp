@@ -1,6 +1,7 @@
 #include "reversi/tt.hpp"
 
 #include "../support/benchmark_positions.hpp"
+#include "../support/search_checks.hpp"
 #include "reversi/moves.hpp"
 #include "reversi/search.hpp"
 
@@ -88,20 +89,22 @@ TEST(TranspositionTable, ClearEmptiesEverySlot) {
 }
 
 // The single most important test in M4: a correct transposition table is a pure time-saver
-// and must NEVER change the answer - identical best move and score at the same depth, with or
-// without it. TT bugs (trusting an Upper/Lower bound as exact, reading an entry written at a
-// shallower depth, hash collisions) don't crash; they make the engine quietly pick a subtly
-// wrong move, which no other test in this suite would notice. Strict move equality (not just
-// score) is valid here for the same reason as in search_iterative_test.cpp: the TT does not
-// change the order the root or any interior node visits moves in - yet.
+// and must NEVER change the answer - identical score at the same depth, with or without it.
+// TT bugs (trusting an Upper/Lower bound as exact, reading an entry written at a shallower
+// depth, hash collisions) don't crash; they make the engine quietly pick a subtly wrong
+// move, which no other test in this suite would notice. Since M4 step 3 the TT's move hints
+// also feed move ordering, which legitimately changes WHICH of several equal-scoring moves
+// fail-soft search returns - so the returned move is verified to provably achieve the score
+// (see search_checks.hpp) instead of being compared for strict equality.
 TEST(TTSearch, SearchWithTTMatchesSearchWithoutOnBenchmarkSet) {
     for (const Position& pos : bench::benchmarkPositions()) {
         for (int depth = 1; depth <= 5; ++depth) {
             const SearchResult baseline = search(pos, depth);
             TranspositionTable tt(std::size_t{1} << 16);
             const SearchResult withTT = search(pos, depth, evaluateDiscDifferential, nullptr, &tt);
-            EXPECT_EQ(withTT.bestMove, baseline.bestMove) << "depth " << depth;
             EXPECT_EQ(withTT.score, baseline.score) << "depth " << depth;
+            EXPECT_EQ(checks::rootMoveValue(pos, withTT.bestMove, depth), withTT.score)
+                << "depth " << depth;
         }
     }
 }
@@ -115,8 +118,8 @@ TEST(TTSearch, IterativeWithSharedTTMatchesFixedDepthOnBenchmarkSet) {
         TranspositionTable tt(std::size_t{1} << 16);
         const SearchResult iterative =
             searchIterative(pos, 5, evaluateDiscDifferential, nullptr, &tt);
-        EXPECT_EQ(iterative.bestMove, baseline.bestMove);
         EXPECT_EQ(iterative.score, baseline.score);
+        EXPECT_EQ(checks::rootMoveValue(pos, iterative.bestMove, 5), iterative.score);
         EXPECT_TRUE(iterative.completed);
     }
 }
@@ -129,23 +132,27 @@ TEST(TTSearch, DeepSearchWithTTMatchesSearchWithout) {
         const SearchResult baseline = search(pos, 7);
         TranspositionTable tt(std::size_t{1} << 20);
         const SearchResult withTT = search(pos, 7, evaluateDiscDifferential, nullptr, &tt);
-        EXPECT_EQ(withTT.bestMove, baseline.bestMove);
         EXPECT_EQ(withTT.score, baseline.score);
+        EXPECT_EQ(checks::rootMoveValue(pos, withTT.bestMove, 7), withTT.score);
     }
 }
 
 // Guards against the table being silently bypassed (which would pass every equality test
-// above while making the TT decorative): search must actually hit it, and hits may only
-// remove work, never add it.
-TEST(TTSearch, TableIsConsultedAndNeverAddsNodes) {
+// above while making the TT decorative): search must actually hit it, and across the whole
+// set it must remove work. Aggregate rather than per-position since M4 step 3: TT move hints
+// reshuffle the ordering, which on an individual position can occasionally cost a few nodes
+// even though the net effect is strongly positive.
+TEST(TTSearch, TableIsConsultedAndRemovesWorkInAggregate) {
     std::uint64_t totalHits = 0;
+    std::uint64_t nodesWithout = 0;
+    std::uint64_t nodesWith = 0;
     for (const Position& pos : bench::benchmarkPositions()) {
-        const SearchResult baseline = search(pos, 5);
+        nodesWithout += search(pos, 5).nodes;
         TranspositionTable tt(std::size_t{1} << 16);
-        const SearchResult withTT = search(pos, 5, evaluateDiscDifferential, nullptr, &tt);
-        EXPECT_LE(withTT.nodes, baseline.nodes);
+        nodesWith += search(pos, 5, evaluateDiscDifferential, nullptr, &tt).nodes;
         totalHits += tt.hits();
     }
+    EXPECT_LT(nodesWith, nodesWithout);
     EXPECT_GT(totalHits, std::uint64_t{0});
 }
 

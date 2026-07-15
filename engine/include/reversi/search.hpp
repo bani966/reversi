@@ -24,7 +24,14 @@ struct SearchResult {
     bool completed = true;
 };
 
-// Fixed-depth negamax with fail-soft alpha-beta pruning. `depth` counts real moves only: a
+// Fixed-depth negamax with fail-soft alpha-beta pruning, PVS (zero-window probes for
+// non-first moves with a full-window re-search on an in-window fail-high), and move ordering:
+// TT move first, then this search's killer moves, then history scores with a corner-biased
+// static fallback. Ordering and PVS are pruning/scheduling optimizations: they must never
+// change the returned score (asserted against the frozen pre-ordering baseline in
+// tests/support/baseline_search.*), but they MAY legitimately change WHICH of several
+// equal-scoring moves is returned, since fail-soft returns the first strict improvement in
+// visit order. `depth` counts real moves only: a
 // forced pass re-searches at the *same* depth (see search.cpp) rather than consuming one,
 // since a pass isn't a decision worth spending look-ahead budget on — this is a different,
 // independent convention from perft's "a pass consumes a ply" (see perft.hpp), which exists
@@ -33,10 +40,12 @@ struct SearchResult {
 // `cancellation`, if non-null, is polled once per node; a requested stop collapses the
 // remaining recursion promptly (see search.cpp) rather than running the search to completion.
 // `tt`, if non-null, is probed/filled during the search. A correct table is a pure
-// time-saver: it must never change bestMove or score at a given depth (asserted directly by
-// tests/engine/tt_test.cpp on the shared benchmark set) — only how much of the tree gets
-// visited to compute them. Nothing is stored from a cancelled subtree, so a table shared
-// across searches can't be poisoned by an abort.
+// time-saver: it must never change the score at a given depth (asserted directly by
+// tests/engine/tt_test.cpp on the shared benchmark set), only how much of the tree gets
+// visited to compute it — though its move hints feed the ordering, so the returned move may
+// be a different but equally-scoring one (verified optimal via tests/support/search_checks.*).
+// Nothing is stored from a cancelled subtree, so a table shared across searches can't be
+// poisoned by an abort.
 // Precondition: hasLegalMove(p). The caller checks this / applies forced passes itself
 // before calling search — search never needs to pick a move for a position that has none.
 SearchResult search(const Position& p, int depth, const EvalFn& eval = evaluateDiscDifferential,

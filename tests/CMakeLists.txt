@@ -19,10 +19,13 @@ add_executable(engine_tests
     engine/search_test.cpp
     engine/search_iterative_test.cpp
     engine/tt_test.cpp
+    engine/ordering_test.cpp
     engine/players_test.cpp
     engine/selfplay_test.cpp
+    support/baseline_search.cpp
     support/benchmark_positions.cpp
     support/naive_reference.cpp
+    support/search_checks.cpp
 )
 target_link_libraries(engine_tests PRIVATE reversi::engine GTest::gtest_main reversi_warnings)
 
