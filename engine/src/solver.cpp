@@ -8,6 +8,47 @@
 
 namespace reversi {
 
+Bitboard oddParitySquares(Bitboard empty) {
+    Bitboard odd = 0;
+    Bitboard remaining = empty;
+    while (remaining != 0) {
+        // Flood-fill the connected region containing the lowest unvisited empty square, via an
+        // explicit stack (max 64 entries - no recursion-depth concerns).
+        const int start = std::countr_zero(remaining);
+        Bitboard region = bit(start);
+        std::array<int, kBoardSquares> stack;
+        int stackSize = 0;
+        stack[stackSize++] = start;
+        while (stackSize > 0) {
+            const int square = stack[--stackSize];
+            const int file = square % 8;
+            const int rank = square / 8;
+            for (int df = -1; df <= 1; ++df) {
+                for (int dr = -1; dr <= 1; ++dr) {
+                    if (df == 0 && dr == 0) {
+                        continue;
+                    }
+                    const int nf = file + df;
+                    const int nr = rank + dr;
+                    if (nf < 0 || nf > 7 || nr < 0 || nr > 7) {
+                        continue;
+                    }
+                    const Bitboard neighbor = bit(squareIndex(nf, nr));
+                    if ((empty & neighbor) != 0 && (region & neighbor) == 0) {
+                        region |= neighbor;
+                        stack[stackSize++] = squareIndex(nf, nr);
+                    }
+                }
+            }
+        }
+        if (std::popcount(region) % 2 == 1) {
+            odd |= region;
+        }
+        remaining &= ~region;
+    }
+    return odd;
+}
+
 namespace {
 
 // Matches search.cpp's convention: far enough from the true score range ([-64, 64]) that
@@ -29,18 +70,43 @@ struct MoveList {
     int count = 0;
 };
 
-// Step 1: plain ascending-square-index order (whatever legalMoves's bit-scan already gives),
-// with the TT move (if any) promoted to the front. Endgame-specific ordering (fastest-first +
-// parity) replaces this in a later step - kept deliberately simple here to isolate "is the new
-// recursion structurally correct" from "is the new ordering correct."
-MoveList orderedMoves(Bitboard moves, int ttMove) {
+// Endgame move ordering: TT move first (a hint only, same usage as search.cpp - never trusted
+// as correct without the bound check that already happened at the probe site), then odd-parity
+// moves before even-parity ones (see oddParitySquares), and within each parity group, fewer
+// opponent replies before more (fastest-first: minimizing the opponent's resulting mobility
+// tends to constrain the search and produce earlier cutoffs). Both are well-documented,
+// independent Othello endgame heuristics; combining them (parity as the primary key, mobility
+// as the tiebreaker) rather than picking one is itself a choice verified empirically via node
+// counts in solver_ordering_test.cpp, not assumed correct on the first attempt.
+MoveList orderedMoves(const Position& pos, Bitboard moves, int ttMove) {
     MoveList list;
     if (ttMove != -1 && (moves & bit(ttMove)) != 0) {
         list.squares[list.count++] = ttMove;
         moves &= ~bit(ttMove);
     }
+
+    struct ScoredMove {
+        int square;
+        bool oddParity;
+        int opponentMobility;
+    };
+    const Bitboard odd = oddParitySquares(pos.empty());
+    std::array<ScoredMove, 34> scored;
+    int scoredCount = 0;
     for (Bitboard b = moves; b != 0; b &= b - 1) {
-        list.squares[list.count++] = std::countr_zero(b);
+        const int square = std::countr_zero(b);
+        const int opponentMobility = std::popcount(legalMoves(applyMove(pos, square)));
+        scored[scoredCount++] = {square, (odd & bit(square)) != 0, opponentMobility};
+    }
+    std::sort(scored.begin(), scored.begin() + scoredCount,
+              [](const ScoredMove& a, const ScoredMove& b) {
+                  if (a.oddParity != b.oddParity) {
+                      return a.oddParity; // odd-parity moves first
+                  }
+                  return a.opponentMobility < b.opponentMobility; // then fewest opponent replies
+              });
+    for (int i = 0; i < scoredCount; ++i) {
+        list.squares[list.count++] = scored[i].square;
     }
     return list;
 }
@@ -89,7 +155,7 @@ int negamax(const Position& pos, int alpha, int beta, SolverContext& ctx) {
     }
 
     const int alphaOriginal = alpha;
-    const MoveList list = orderedMoves(moves, ttMove);
+    const MoveList list = orderedMoves(pos, moves, ttMove);
     int best = -kInfinity;
     int bestSquare = -1;
     for (int i = 0; i < list.count; ++i) {
@@ -142,7 +208,7 @@ SearchResult solveExact(const Position& p, const CancellationToken* cancellation
             ttMove = entry->bestMove;
         }
     }
-    const MoveList list = orderedMoves(legalMoves(p), ttMove);
+    const MoveList list = orderedMoves(p, legalMoves(p), ttMove);
     SearchResult result;
     int alpha = -kInfinity;
     const int beta = kInfinity;

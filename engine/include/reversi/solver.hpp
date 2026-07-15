@@ -13,6 +13,18 @@ namespace reversi {
 // callers (GUI/CLI, once wired) never hardcode this threshold themselves.
 constexpr int kExactSolverEmptyThreshold = 12;
 
+// Empty-region parity, a well-documented Othello endgame move-ordering heuristic: flood-fills
+// `empty` into its 8-directionally-connected regions and returns the union of every region
+// whose size (empty-square count) is odd. In a game with several disjoint empty regions left,
+// whoever is forced to move first into an EVEN region tends to hand it to the opponent (the
+// region's parity of moves works against the first mover there); preferring to play into odd
+// regions first, leaving even ones for later, is the standard mitigation used by real Othello
+// endgame solvers. This function only classifies squares - solveExact() combines it with
+// fastest-first mobility to actually order moves; exposed here (rather than kept file-private in
+// solver.cpp) so the flood-fill logic itself has a direct unit test independent of its effect on
+// search node counts.
+Bitboard oddParitySquares(Bitboard empty);
+
 // Perfect-play search to the true end of the game: no heuristic evaluation function anywhere —
 // every leaf is `terminalScore`, the actual final disc differential. `Position::emptyCount()`
 // squares remain, so this is exhaustive (not depth-limited in the heuristic-search sense).
