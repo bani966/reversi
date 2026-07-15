@@ -32,8 +32,7 @@ const BoardPalette& boardPalette() {
         .windowBackground = QColor(24, 24, 26),
         .boardColor = QColor(66, 116, 72),
         .gridLineColor = QColor(235, 238, 230, 50),
-        .coordinateTextColor =
-            QColor(232, 224, 208, 230), // warm cream, reads clearly over the felt
+        .coordinateTextColor = QColor(240, 230, 210, 250), // warm cream, high contrast on the felt
         .blackDiscFill = QColor(26, 26, 28),
         .blackDiscBorder = QColor(58, 58, 62),
         .whiteDiscFill = QColor(242, 236, 224),
@@ -129,7 +128,7 @@ void BoardWidget::paintEvent(QPaintEvent*) {
     // chess.com-style board prints its own bottom edge.
     QFont labelFont(QStringLiteral("Segoe UI")); // Qt substitutes a system sans-serif if absent
     labelFont.setPixelSize(std::max(9, cellSize_ / 6));
-    labelFont.setWeight(QFont::DemiBold); // regular weight read as an afterthought against the felt
+    labelFont.setWeight(QFont::Bold); // demibold wasn't a clear enough jump from regular weight
     painter.setFont(labelFont);
     painter.setPen(theme.coordinateTextColor);
     const int labelInset = std::max(2, cellSize_ / 14);
