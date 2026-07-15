@@ -4,6 +4,7 @@ add_library(reversi_engine STATIC
     src/moves.cpp
     src/perft.cpp
     src/eval.cpp
+    src/tt.cpp
     src/search.cpp
     src/players.cpp
     src/selfplay.cpp

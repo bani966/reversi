@@ -3,6 +3,7 @@
 #include "reversi/cancellation.hpp"
 #include "reversi/eval.hpp"
 #include "reversi/position.hpp"
+#include "reversi/tt.hpp"
 
 #include <cstdint>
 
@@ -31,10 +32,16 @@ struct SearchResult {
 // `nodes` counts negamax invocations below the root, for reporting nps.
 // `cancellation`, if non-null, is polled once per node; a requested stop collapses the
 // remaining recursion promptly (see search.cpp) rather than running the search to completion.
+// `tt`, if non-null, is probed/filled during the search. A correct table is a pure
+// time-saver: it must never change bestMove or score at a given depth (asserted directly by
+// tests/engine/tt_test.cpp on the shared benchmark set) — only how much of the tree gets
+// visited to compute them. Nothing is stored from a cancelled subtree, so a table shared
+// across searches can't be poisoned by an abort.
 // Precondition: hasLegalMove(p). The caller checks this / applies forced passes itself
 // before calling search — search never needs to pick a move for a position that has none.
 SearchResult search(const Position& p, int depth, const EvalFn& eval = evaluateDiscDifferential,
-                    const CancellationToken* cancellation = nullptr);
+                    const CancellationToken* cancellation = nullptr,
+                    TranspositionTable* tt = nullptr);
 
 // Iterative deepening driver over search(): runs complete fixed-depth searches at depth
 // 1, 2, ..., maxDepth and returns the deepest fully-finished iteration's result, with `nodes`
@@ -45,9 +52,12 @@ SearchResult search(const Position& p, int depth, const EvalFn& eval = evaluateD
 // the previous depth's complete answer instead of an untrustworthy partial one, and the TT +
 // move-ordering steps feed each iteration's discoveries into the next one's ordering.
 // `completed` is true iff at least the depth-1 iteration finished, i.e. iff bestMove/score
-// are trustworthy. Same precondition as search(): hasLegalMove(p).
+// are trustworthy. A `tt` passed here is deliberately shared across iterations (the intended
+// hot path — see tt.hpp); the same never-changes-the-answer contract as search()'s applies.
+// Same precondition as search(): hasLegalMove(p).
 SearchResult searchIterative(const Position& p, int maxDepth,
                              const EvalFn& eval = evaluateDiscDifferential,
-                             const CancellationToken* cancellation = nullptr);
+                             const CancellationToken* cancellation = nullptr,
+                             TranspositionTable* tt = nullptr);
 
 } // namespace reversi
