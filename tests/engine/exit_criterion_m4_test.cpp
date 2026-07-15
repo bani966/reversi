@@ -58,7 +58,8 @@ struct DeterministicOutcome {
     int baselineDiscs = 0;
 };
 
-DeterministicOutcome playDeterministic(int maturedDepth, int baselineDepthArg, bool maturedIsBlack) {
+DeterministicOutcome playDeterministic(int maturedDepth, int baselineDepthArg,
+                                       bool maturedIsBlack) {
     TranspositionTable tt(std::size_t{1} << 20);
     const PlayerFn matured = [maturedDepth, &tt](const Position& p) {
         return searchIterative(p, maturedDepth, evaluateDiscDifferential, nullptr, &tt).bestMove;
@@ -85,9 +86,9 @@ DeterministicOutcome playDeterministic(int maturedDepth, int baselineDepthArg, b
 // Measured result: matured 63 discs, baseline 0 - a near-total shutout.
 TEST(Search, FixedDepthGainVsM2Baseline) {
     const DeterministicOutcome outcome = playDeterministic(/*maturedDepth=*/12, kBaselineDepth,
-                                                            /*maturedIsBlack=*/true);
+                                                           /*maturedIsBlack=*/true);
     std::fprintf(stderr, "FixedDepthGainVsM2Baseline: matured=%d baseline=%d\n",
-                outcome.maturedDiscs, outcome.baselineDiscs);
+                 outcome.maturedDiscs, outcome.baselineDiscs);
     EXPECT_GT(outcome.maturedDiscs, outcome.baselineDiscs);
 }
 
@@ -95,8 +96,7 @@ PlayerFn maturedTimedPlayer(TranspositionTable& tt) {
     constexpr TimeBudget kBudget{std::chrono::milliseconds{800}, std::chrono::milliseconds{2500}};
     constexpr int kMaxDepth = 60; // safety net; the time budget governs actual depth reached
     return [&tt, kBudget](const Position& p) {
-        return searchTimed(p, kMaxDepth, kBudget, evaluateDiscDifferential, nullptr, &tt)
-            .bestMove;
+        return searchTimed(p, kMaxDepth, kBudget, evaluateDiscDifferential, nullptr, &tt).bestMove;
     };
 }
 
@@ -130,9 +130,9 @@ TEST(DISABLED_ExitCriterionM4, WallClockVsM2Baseline) {
     for (int i = 0; i < kGames; ++i) {
         TranspositionTable tt(std::size_t{1} << 20); // fresh per game, matching real GUI usage
         const bool maturedIsBlack = (i % 2 == 0);
-        const GameResult game = maturedIsBlack
-                                    ? playGame(maturedTimedPlayer(tt), baselinePlayer(kBaselineDepth))
-                                    : playGame(baselinePlayer(kBaselineDepth), maturedTimedPlayer(tt));
+        const GameResult game =
+            maturedIsBlack ? playGame(maturedTimedPlayer(tt), baselinePlayer(kBaselineDepth))
+                           : playGame(baselinePlayer(kBaselineDepth), maturedTimedPlayer(tt));
         const int maturedDiscs = maturedIsBlack ? game.blackDiscs : game.whiteDiscs;
         const int baselineDiscs = maturedIsBlack ? game.whiteDiscs : game.blackDiscs;
         if (maturedDiscs > baselineDiscs) {
@@ -144,7 +144,7 @@ TEST(DISABLED_ExitCriterionM4, WallClockVsM2Baseline) {
         }
     }
     std::fprintf(stderr, "WallClockVsM2Baseline: matured=%d baseline=%d draws=%d (of %d)\n",
-                maturedWins, baselineWins, draws, kGames);
+                 maturedWins, baselineWins, draws, kGames);
     EXPECT_GE(maturedWins, 6); // observed floor across 3 measured runs; see comment above
 }
 
