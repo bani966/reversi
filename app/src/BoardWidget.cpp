@@ -14,29 +14,30 @@ constexpr int kBoardSquares = 8;
 struct BoardPalette {
     QColor windowBackground; // letterbox color when the widget isn't square
     QColor boardColor;
-    QColor gridColor;
-    QColor blackDiscColor;
-    QColor blackDiscBorderColor;
-    QColor whiteDiscColor;
-    QColor whiteDiscBorderColor;
-    QColor highlightColor;
-    QColor labelColor;
+    QColor gridLineColor;
+    QColor coordinateTextColor;
+    QColor blackDiscFill;
+    QColor blackDiscBorder;
+    QColor whiteDiscFill;
+    QColor whiteDiscBorder;
+    QColor legalMoveHighlightColor;
 };
 
 const BoardPalette& boardPalette() {
-    // Apple-minimalist: muted neutral board, generous disc whitespace, high-contrast but not
-    // garish discs (near-black/near-white rather than pure #000/#fff, each with a subtle
-    // border for definition against the board and against each other).
+    // Traditional solid-green Othello felt table, chess.com-style panel typography and
+    // coordinate placement: a richer, slightly desaturated felt green (not neon), thin light
+    // gridlines on top of one continuous field, off-white/near-black discs (not pure #fff/
+    // #000) each with a subtle border for definition.
     static const BoardPalette kPalette{
         .windowBackground = QColor(24, 24, 26),
-        .boardColor = QColor(74, 124, 89),
-        .gridColor = QColor(60, 102, 73),
-        .blackDiscColor = QColor(30, 30, 32),
-        .blackDiscBorderColor = QColor(70, 70, 74),
-        .whiteDiscColor = QColor(245, 245, 243),
-        .whiteDiscBorderColor = QColor(200, 200, 196),
-        .highlightColor = QColor(255, 255, 255, 80),
-        .labelColor = QColor(222, 234, 224, 175),
+        .boardColor = QColor(66, 116, 72),
+        .gridLineColor = QColor(235, 238, 230, 50),
+        .coordinateTextColor = QColor(224, 232, 220, 195),
+        .blackDiscFill = QColor(26, 26, 28),
+        .blackDiscBorder = QColor(58, 58, 62),
+        .whiteDiscFill = QColor(242, 236, 224),
+        .whiteDiscBorder = QColor(178, 168, 150),
+        .legalMoveHighlightColor = QColor(255, 255, 255, 70),
     };
     return kPalette;
 }
@@ -106,9 +107,11 @@ void BoardWidget::paintEvent(QPaintEvent*) {
 
     const int boardPixels = cellSize_ * kBoardSquares;
     const QRect boardRect(boardOrigin_, QSize(boardPixels, boardPixels));
+    // One continuous felt-green field, with thin light gridlines drawn on top - not a
+    // checkerboard of alternating squares (this is Othello, not chess).
     painter.fillRect(boardRect, theme.boardColor);
 
-    painter.setPen(theme.gridColor);
+    painter.setPen(QPen(theme.gridLineColor, 1));
     for (int i = 0; i <= kBoardSquares; ++i) {
         const int x = boardOrigin_.x() + i * cellSize_;
         const int y = boardOrigin_.y() + i * cellSize_;
@@ -116,35 +119,38 @@ void BoardWidget::paintEvent(QPaintEvent*) {
         painter.drawLine(boardOrigin_.x(), y, boardOrigin_.x() + boardPixels, y);
     }
 
-    // Coordinate labels: files a-h inset in the top-left corner of the top row, ranks 1-8
-    // inset in the bottom-left corner of the left column - lichess/chess.com's placement,
-    // chosen because it's a proven, unobtrusive pattern (the two only ever share a corner in
-    // a1, where they land in different corners of that one cell and don't collide). Matches
-    // this project's fixed a1-top-left, rank-increases-downward orientation (see
-    // reversi/position.hpp) rather than flipping to a rank-1-at-bottom layout.
-    QFont labelFont = painter.font();
+    // Coordinate labels: chess.com's placement - files a-h inset in the bottom-right corner of
+    // the bottom row, ranks 1-8 inset in the top-left corner of the left column. The two only
+    // ever share one cell (the bottom-left corner of the board), where they land in different
+    // corners of that cell and don't collide. This project's orientation is fixed (a1
+    // top-left, rank increases downward - see reversi/position.hpp), so "bottom row" here is
+    // the last row regardless of which rank number is printed on it, matching where a
+    // chess.com-style board prints its own bottom edge.
+    QFont labelFont(QStringLiteral("Segoe UI")); // Qt substitutes a system sans-serif if absent
     labelFont.setPixelSize(std::max(9, cellSize_ / 6));
     painter.setFont(labelFont);
-    painter.setPen(theme.labelColor);
+    painter.setPen(theme.coordinateTextColor);
     const int labelInset = std::max(2, cellSize_ / 14);
+    const int bottomRow = kBoardSquares - 1;
     for (int file = 0; file < kBoardSquares; ++file) {
-        const QRect cell(boardOrigin_.x() + file * cellSize_, boardOrigin_.y(), cellSize_,
-                         cellSize_);
+        const QRect cell(boardOrigin_.x() + file * cellSize_,
+                         boardOrigin_.y() + bottomRow * cellSize_, cellSize_, cellSize_);
         const QRect labelRect = cell.adjusted(labelInset, labelInset, -labelInset, -labelInset);
-        painter.drawText(labelRect, Qt::AlignTop | Qt::AlignLeft, QString(QChar('a' + file)));
+        painter.drawText(labelRect, Qt::AlignBottom | Qt::AlignRight, QString(QChar('a' + file)));
     }
     for (int rank = 0; rank < kBoardSquares; ++rank) {
         const QRect cell(boardOrigin_.x(), boardOrigin_.y() + rank * cellSize_, cellSize_,
                          cellSize_);
         const QRect labelRect = cell.adjusted(labelInset, labelInset, -labelInset, -labelInset);
-        painter.drawText(labelRect, Qt::AlignBottom | Qt::AlignLeft, QString::number(rank + 1));
+        painter.drawText(labelRect, Qt::AlignTop | Qt::AlignLeft, QString::number(rank + 1));
     }
 
-    // Generous whitespace around each disc rather than filling the cell edge-to-edge, plus a
-    // subtle border on both colors for definition (a flat fill alone reads as an undecorated
-    // circle, not a deliberately designed piece).
+    // Consistent padding so discs never touch gridlines, plus a deliberate border (not a flat
+    // undecorated circle): white gets a border a shade darker than its fill for definition
+    // against the green; black is already darkest, so its border is a shade lighter instead -
+    // otherwise a "darker than near-black" border would be indistinguishable from the fill.
     const int discMargin = std::max(2, static_cast<int>(cellSize_ * 0.16));
-    const int discBorderWidth = std::max(1, cellSize_ / 40);
+    const int discBorderWidth = std::clamp(cellSize_ / 35, 2, 3);
     const int highlightMargin = cellSize_ * 3 / 8;
     // Diagram orientation matches the CLI's: a1 top-left, rank increases downward, file
     // increases rightward.
@@ -155,18 +161,18 @@ void BoardWidget::paintEvent(QPaintEvent*) {
             const QRect cell(boardOrigin_.x() + file * cellSize_,
                              boardOrigin_.y() + rank * cellSize_, cellSize_, cellSize_);
             if ((state_.blackDiscs & mask) != 0) {
-                painter.setPen(QPen(theme.blackDiscBorderColor, discBorderWidth));
-                painter.setBrush(theme.blackDiscColor);
+                painter.setPen(QPen(theme.blackDiscBorder, discBorderWidth));
+                painter.setBrush(theme.blackDiscFill);
                 painter.drawEllipse(
                     cell.adjusted(discMargin, discMargin, -discMargin, -discMargin));
             } else if ((state_.whiteDiscs & mask) != 0) {
-                painter.setPen(QPen(theme.whiteDiscBorderColor, discBorderWidth));
-                painter.setBrush(theme.whiteDiscColor);
+                painter.setPen(QPen(theme.whiteDiscBorder, discBorderWidth));
+                painter.setBrush(theme.whiteDiscFill);
                 painter.drawEllipse(
                     cell.adjusted(discMargin, discMargin, -discMargin, -discMargin));
             } else if ((state_.legalMoveHighlights & mask) != 0) {
                 painter.setPen(Qt::NoPen);
-                painter.setBrush(theme.highlightColor);
+                painter.setBrush(theme.legalMoveHighlightColor);
                 painter.drawEllipse(cell.adjusted(highlightMargin, highlightMargin,
                                                   -highlightMargin, -highlightMargin));
             }
