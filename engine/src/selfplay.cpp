@@ -21,7 +21,7 @@ GameResult playGame(const PlayerFn& black, const PlayerFn& white) {
     }
 
     return blackToMove ? GameResult{pos.ownCount(), pos.oppCount()}
-                        : GameResult{pos.oppCount(), pos.ownCount()};
+                       : GameResult{pos.oppCount(), pos.ownCount()};
 }
 
 MatchResult playMatch(const PlayerFn& a, const PlayerFn& b, int games) {

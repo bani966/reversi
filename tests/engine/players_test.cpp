@@ -14,8 +14,8 @@ namespace {
 Position twoMoveFixture() {
     Position p;
     p.own = bit(*squareFromString("e4"));
-    p.opp = bit(*squareFromString("d4")) | bit(*squareFromString("f4")) |
-            bit(*squareFromString("g4"));
+    p.opp =
+        bit(*squareFromString("d4")) | bit(*squareFromString("f4")) | bit(*squareFromString("g4"));
     return p;
 }
 
