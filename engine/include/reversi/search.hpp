@@ -12,6 +12,10 @@ struct SearchResult {
     int bestMove = -1;
     int score = 0;
     std::uint64_t nodes = 0;
+    // The look-ahead depth bestMove/score actually reflect: the requested depth for a
+    // completed fixed-depth search, the deepest fully-finished iteration for searchIterative,
+    // and 0 whenever completed is false (nothing was finished, so no depth can be claimed).
+    int depth = 0;
     // False iff `cancellation` requested a stop before this search finished exploring every
     // move — bestMove/score reflect whatever was explored so far, not a complete answer, and
     // callers that care about correctness (e.g. a GUI applying the chosen move) must discard
@@ -31,5 +35,19 @@ struct SearchResult {
 // before calling search — search never needs to pick a move for a position that has none.
 SearchResult search(const Position& p, int depth, const EvalFn& eval = evaluateDiscDifferential,
                     const CancellationToken* cancellation = nullptr);
+
+// Iterative deepening driver over search(): runs complete fixed-depth searches at depth
+// 1, 2, ..., maxDepth and returns the deepest fully-finished iteration's result, with `nodes`
+// accumulated across every iteration (including a final aborted one). Without a cancellation
+// request this returns exactly search(p, maxDepth)'s bestMove/score - a scheduling change,
+// not an algorithmic one (asserted by tests) - at the cost of the cheaper warm-up iterations.
+// The payoff lands later in M4: a cancellation/deadline mid-iteration degrades gracefully to
+// the previous depth's complete answer instead of an untrustworthy partial one, and the TT +
+// move-ordering steps feed each iteration's discoveries into the next one's ordering.
+// `completed` is true iff at least the depth-1 iteration finished, i.e. iff bestMove/score
+// are trustworthy. Same precondition as search(): hasLegalMove(p).
+SearchResult searchIterative(const Position& p, int maxDepth,
+                             const EvalFn& eval = evaluateDiscDifferential,
+                             const CancellationToken* cancellation = nullptr);
 
 } // namespace reversi

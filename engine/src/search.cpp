@@ -77,7 +77,25 @@ SearchResult search(const Position& p, int depth, const EvalFn& eval,
         }
     }
     result.completed = cancellation == nullptr || !cancellation->stopRequested();
+    result.depth = result.completed ? depth : 0;
     return result;
+}
+
+SearchResult searchIterative(const Position& p, int maxDepth, const EvalFn& eval,
+                             const CancellationToken* cancellation) {
+    SearchResult deepest;
+    deepest.completed = false; // stays false unless some iteration actually finishes
+    std::uint64_t totalNodes = 0;
+    for (int depth = 1; depth <= maxDepth; ++depth) {
+        const SearchResult iteration = search(p, depth, eval, cancellation);
+        totalNodes += iteration.nodes;
+        if (!iteration.completed) {
+            break; // aborted mid-iteration: the previous depth's result stands
+        }
+        deepest = iteration;
+    }
+    deepest.nodes = totalNodes;
+    return deepest;
 }
 
 } // namespace reversi
