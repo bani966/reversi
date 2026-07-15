@@ -32,7 +32,8 @@ const BoardPalette& boardPalette() {
         .windowBackground = QColor(24, 24, 26),
         .boardColor = QColor(66, 116, 72),
         .gridLineColor = QColor(235, 238, 230, 50),
-        .coordinateTextColor = QColor(224, 232, 220, 195),
+        .coordinateTextColor =
+            QColor(232, 224, 208, 230), // warm cream, reads clearly over the felt
         .blackDiscFill = QColor(26, 26, 28),
         .blackDiscBorder = QColor(58, 58, 62),
         .whiteDiscFill = QColor(242, 236, 224),
@@ -128,6 +129,7 @@ void BoardWidget::paintEvent(QPaintEvent*) {
     // chess.com-style board prints its own bottom edge.
     QFont labelFont(QStringLiteral("Segoe UI")); // Qt substitutes a system sans-serif if absent
     labelFont.setPixelSize(std::max(9, cellSize_ / 6));
+    labelFont.setWeight(QFont::DemiBold); // regular weight read as an afterthought against the felt
     painter.setFont(labelFont);
     painter.setPen(theme.coordinateTextColor);
     const int labelInset = std::max(2, cellSize_ / 14);
@@ -150,7 +152,7 @@ void BoardWidget::paintEvent(QPaintEvent*) {
     // against the green; black is already darkest, so its border is a shade lighter instead -
     // otherwise a "darker than near-black" border would be indistinguishable from the fill.
     const int discMargin = std::max(2, static_cast<int>(cellSize_ * 0.16));
-    const int discBorderWidth = std::clamp(cellSize_ / 35, 2, 3);
+    const int discBorderWidth = std::clamp(cellSize_ / 35, 2, 3) + 1;
     const int highlightMargin = cellSize_ * 3 / 8;
     // Diagram orientation matches the CLI's: a1 top-left, rank increases downward, file
     // increases rightward.
