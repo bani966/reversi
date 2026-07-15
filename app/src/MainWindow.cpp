@@ -13,7 +13,30 @@
 #include <QStatusBar>
 #include <QVBoxLayout>
 
+#ifdef Q_OS_WIN
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <dwmapi.h>
+#include <windows.h>
+#endif
+
 namespace {
+
+#ifdef Q_OS_WIN
+// Spike (M3 round 2, stage 2): ask DWM to round this frameless window's corners at the OS
+// compositor level. If this actually works on a frameless window, it avoids
+// Qt::WA_TranslucentBackground entirely - which has documented rendering bugs at fractional
+// DPI scale factors (125%/150%/175%, common on Windows laptops) and renders sliced when
+// dragged between differently-scaled monitors. Windows 11 only; DwmSetWindowAttribute with
+// this attribute is simply unavailable/a no-op on Windows 10, which is an acceptable
+// degradation (square corners there, not a crash or a broken window).
+void applyWindowsCornerRounding(QWidget* window) {
+    const auto hwnd = reinterpret_cast<HWND>(window->winId());
+    const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &preference, sizeof(preference));
+}
+#endif
+
 // Stylesheet pass only - QMenuBar/QMenu/QStatusBar stay real native widgets, just re-skinned
 // to match the board's dark, flat aesthetic instead of default Windows menu chrome. Built from
 // chrome::palette() (shared with BoardWidget's coordinate labels and TitleBarWidget) rather
@@ -73,6 +96,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     resize(720,
            796); // was 720x760; +36px to make room for the title bar replacing native decoration
     setStyleSheet(buildChromeStyleSheet());
+
+#ifdef Q_OS_WIN
+    applyWindowsCornerRounding(this);
+#endif
 
     // QMainWindow's own menuBar()/statusBar() dock automatically above/below whatever is set
     // as the central widget - that would put them below our custom title bar, not above it. So

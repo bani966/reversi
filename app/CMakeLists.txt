@@ -25,6 +25,12 @@ target_link_libraries(reversi-app PRIVATE
     reversi_warnings
 )
 
+# Windows 11 DWM corner-rounding spike (MainWindow.cpp, Q_OS_WIN-guarded) - no-op on other
+# platforms since dwmapi is Windows-only.
+if(WIN32)
+    target_link_libraries(reversi-app PRIVATE dwmapi)
+endif()
+
 set_target_properties(reversi-app PROPERTIES
     WIN32_EXECUTABLE ON
     MACOSX_BUNDLE ON

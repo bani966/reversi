@@ -2,6 +2,7 @@
 
 #include "Palette.hpp"
 
+#include <QColor>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
@@ -12,10 +13,12 @@ namespace {
 constexpr int kTitleBarHeight = 36;
 constexpr int kButtonWidth = 46;
 
-// Stage 1 is functional correctness, not final styling (that's a later stage) - this is
-// deliberately minimal so the buttons read as intentional rather than default-Qt-white against
-// the dark bar, without trying to nail hover/pressed polish yet.
-QPushButton* makeButton(const QString& glyph, QWidget* parent) {
+// Windows 11's own close-button hover red - matching the platform convention rather than
+// reusing the generic panel-hover gray, since "close" is the one button worth visually
+// distinguishing before you click it.
+const QColor kCloseHoverColor(196, 43, 28);
+
+QPushButton* makeButton(const QString& glyph, QWidget* parent, const QColor& hoverColor) {
     auto* button = new QPushButton(glyph, parent);
     button->setFixedSize(kButtonWidth, kTitleBarHeight);
     button->setFlat(true);
@@ -25,7 +28,7 @@ QPushButton* makeButton(const QString& glyph, QWidget* parent) {
         QStringLiteral("QPushButton { background: transparent; color: %1; "
                        "border: none; font-family: 'Segoe UI'; font-size: 11px; } "
                        "QPushButton:hover { background-color: %2; }")
-            .arg(theme.textColor.name(), theme.panelHover.name()));
+            .arg(theme.textColor.name(), hoverColor.name()));
     return button;
 }
 } // namespace
@@ -41,9 +44,9 @@ TitleBarWidget::TitleBarWidget(QWidget* parent) : QWidget(parent) {
         QStringLiteral("color: %1; font-family: 'Segoe UI'; font-weight: 500; padding-left: 10px;")
             .arg(theme.textColor.name()));
 
-    minimizeButton_ = makeButton(QStringLiteral("−"), this); // minus sign
-    maximizeButton_ = makeButton(QStringLiteral("□"), this); // white square
-    closeButton_ = makeButton(QStringLiteral("✕"), this);    // multiplication x
+    minimizeButton_ = makeButton(QStringLiteral("−"), this, theme.panelHover); // minus sign
+    maximizeButton_ = makeButton(QStringLiteral("□"), this, theme.panelHover); // white square
+    closeButton_ = makeButton(QStringLiteral("✕"), this, kCloseHoverColor);    // multiplication x
 
     connect(minimizeButton_, &QPushButton::clicked, this, &TitleBarWidget::minimizeRequested);
     connect(maximizeButton_, &QPushButton::clicked, this,
