@@ -4,6 +4,10 @@
 find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia)
 qt_standard_project_setup()
 
+# GameController runs AI search on a std::thread; MSVC needs nothing extra, but Threads::Threads
+# is the portable way to get pthread linked in on Linux/macOS toolchains too.
+find_package(Threads REQUIRED)
+
 qt_add_executable(reversi-app
     src/main.cpp
     src/MainWindow.cpp
@@ -15,6 +19,7 @@ target_link_libraries(reversi-app PRIVATE
     reversi::engine
     Qt6::Widgets
     Qt6::Multimedia
+    Threads::Threads
     reversi_warnings
 )
 

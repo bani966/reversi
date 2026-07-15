@@ -2,11 +2,15 @@
 
 #include "BoardWidget.hpp"
 
+#include "reversi/cancellation.hpp"
 #include "reversi/position.hpp"
+#include "reversi/search.hpp"
 
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <memory>
+#include <thread>
 
 // The "thin controller/view-model": owns the game state and all turn-taking/rules
 // orchestration. BoardWidget only renders and reports clicks; it never touches reversi::
@@ -22,8 +26,15 @@ public:
     };
 
     explicit GameController(QObject* parent = nullptr);
+    ~GameController() override;
 
     void newGame(GameMode mode);
+
+    // Requests the in-flight AI search (if any) to stop and blocks until its worker thread
+    // has finished. Safe to call when no search is running. Must be called before this object
+    // (and the Position it captured for the worker thread) is destroyed - this is the concrete
+    // mechanism behind "closing the window while the AI is thinking must not hang or crash".
+    void cancelAiSearch();
 
 public slots:
     void onSquareClicked(int square);
@@ -40,8 +51,18 @@ private:
     bool blackToMove_ = true;
     GameMode mode_ = GameMode::HumanVsHuman;
 
+    std::thread aiThread_;
+    std::shared_ptr<reversi::CancellationToken> cancellation_;
+    // Bumped on every new search and every cancellation, so a result that arrives after being
+    // superseded (by a new search or a new game) can be recognized as stale and discarded even
+    // if it otherwise looks like a normal completed result.
+    int searchGeneration_ = 0;
+
     bool isHumanTurn() const;
     void advanceTurn();
     void emitBoardState();
     void emitStatus(const QStringList& passMessages);
+
+    void startAiSearch();
+    void onAiSearchFinished(const reversi::SearchResult& result, int generation);
 };

@@ -1,8 +1,20 @@
 #include "GameController.hpp"
 
+#include "reversi/eval.hpp"
 #include "reversi/moves.hpp"
 
+#include <QMetaObject>
+
+namespace {
+// Matches M2's measured/validated depth (100/100 vs greedy, 97/100 vs random in self-play).
+constexpr int kAiSearchDepth = 10;
+} // namespace
+
 GameController::GameController(QObject* parent) : QObject(parent) {}
+
+GameController::~GameController() {
+    cancelAiSearch();
+}
 
 bool GameController::isHumanTurn() const {
     switch (mode_) {
@@ -17,10 +29,21 @@ bool GameController::isHumanTurn() const {
 }
 
 void GameController::newGame(GameMode mode) {
+    cancelAiSearch();
     mode_ = mode;
     pos_ = reversi::Position::start();
     blackToMove_ = true;
     advanceTurn();
+}
+
+void GameController::cancelAiSearch() {
+    if (cancellation_) {
+        cancellation_->requestStop();
+    }
+    ++searchGeneration_; // even a result that completes anyway is now stale
+    if (aiThread_.joinable()) {
+        aiThread_.join();
+    }
 }
 
 void GameController::onSquareClicked(int square) {
@@ -49,6 +72,39 @@ void GameController::advanceTurn() {
     }
     emitBoardState();
     emitStatus(passMessages);
+    if (!reversi::isGameOver(pos_) && !isHumanTurn()) {
+        startAiSearch();
+    }
+}
+
+void GameController::startAiSearch() {
+    const QString mover = blackToMove_ ? QStringLiteral("Black") : QStringLiteral("White");
+    emit statusChanged(mover + QStringLiteral(" to move. (AI thinking...)"));
+
+    cancelAiSearch(); // defensive: keeps "at most one aiThread_ alive" airtight even if a
+                      // future mode ever dispatches AI twice in a row
+    ++searchGeneration_;
+    const int myGeneration = searchGeneration_;
+    cancellation_ = std::make_shared<reversi::CancellationToken>();
+    const std::shared_ptr<reversi::CancellationToken> cancellationCopy = cancellation_;
+    const reversi::Position posCopy = pos_;
+
+    aiThread_ = std::thread([this, posCopy, myGeneration, cancellationCopy] {
+        const reversi::SearchResult result = reversi::search(
+            posCopy, kAiSearchDepth, reversi::evaluateDiscDifferential, cancellationCopy.get());
+        QMetaObject::invokeMethod(
+            this, [this, result, myGeneration] { onAiSearchFinished(result, myGeneration); },
+            Qt::QueuedConnection);
+    });
+}
+
+void GameController::onAiSearchFinished(const reversi::SearchResult& result, int generation) {
+    if (generation != searchGeneration_ || !result.completed) {
+        return; // superseded by a new game/search, or this one was cancelled: discard
+    }
+    pos_ = reversi::applyMove(pos_, result.bestMove);
+    blackToMove_ = !blackToMove_;
+    advanceTurn();
 }
 
 void GameController::emitBoardState() {
