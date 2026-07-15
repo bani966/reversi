@@ -25,16 +25,23 @@ add_executable(engine_tests
     engine/solver_test.cpp
     engine/solver_ordering_test.cpp
     engine/solver_tt_test.cpp
+    engine/ffo_test.cpp
     engine/players_test.cpp
     engine/selfplay_test.cpp
     support/baseline_search.cpp
     support/baseline_solver.cpp
     support/benchmark_positions.cpp
     support/endgame_positions.cpp
+    support/ffo.cpp
     support/naive_reference.cpp
     support/search_checks.cpp
 )
 target_link_libraries(engine_tests PRIVATE reversi::engine GTest::gtest_main reversi_warnings)
+# Absolute path to tests/data, baked in at configure time so ffo_test.cpp can locate the
+# vendored FFO data file regardless of ctest's working directory (which varies by generator/
+# platform, unlike the source tree layout).
+target_compile_definitions(engine_tests PRIVATE
+    "REVERSI_TEST_DATA_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/data\"")
 
 include(GoogleTest)
 # PRE_TEST discovery plays well with the multi-config Visual Studio generator.

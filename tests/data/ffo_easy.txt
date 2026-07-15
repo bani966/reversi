@@ -1,0 +1,27 @@
+% Subset of Othello endgame test positions, vendored for M5's exit criterion ("FFO test
+% positions solved with correct exact scores"). Sourced from:
+%   https://raw.githubusercontent.com/jeffreyan11/othello_engine/master/ffotest/eg_13_14.txt
+% (fetched 2026-07-16, verbatim - not reconstructed from memory). Format, one position per
+% line: <64-char board, row-major a1..h8, X=black/O=white/-=empty> <Black|White to move>
+% <best move square, 0-63, matching this project's own bit/square convention (bit i: file =
+% i%8, rank = i/8)> <exact score>.
+%
+% IMPORTANT, confirmed empirically (not assumed) while vendoring this file: the raw score field
+% as it appears below is fixed to BLACK's perspective, not the mover's - every "White to move"
+% line's raw score is the exact negation of the true mover-relative result. tests/support/ffo.cpp
+% converts this to mover-relative (matching solveExact()'s convention) at parse time, so
+% FfoPosition::score is NOT the literal number printed on each line below when White is to move.
+% Provenance note: this source repository groups positions by empty-square count (13-14 here)
+% rather than the FFO's own canonical #1-#79 problem numbering. The canonical source
+% (radagast.se/othello/ffotest.html, Gunnar Andersson) was unreachable from the environment
+% that vendored this file (connection reset on both http and https), so whether these specific
+% positions correspond 1:1 with officially-numbered FFO problems is not confirmed. They are,
+% however, genuine FFO-format Othello endgame test positions with published exact scores.
+-OOOOOO---OOOO-XXXOOXXXX-OOXXOOX-OXOOOXX-XXXXXXX--OOXX-X-OOOO-X- Black 32 -34
+XXXXX----XXXXX--OOXOX-O--OOXOOO-XOOOXXO--OOOXXXO-OOOOXXXXXXXXXOO White 5 46
+OOOOOOO--OOXXXXX-XOOOXXX-XOOXOOXXXOXOXOXXXXXOOXX---XXX-X---X-X-- Black 8 -42
+X-XX----OXXXXXX-XOOOOXOOXOOXXOOOXXOXXOOOXXXOXOOO-XXXXO---O-XXO-- White 58 -24
+OOOO-OXOOOOOO-XOOOOOXOXOOOOXOOXOOOOOXOOO--OOXOOO--OXXX-O---X--X- White 13 -18
+---XXXXX---OOXXX-OOOXXOXXOOOXOXX-OOXOXXX--OOOOOX--OXOOOX-O-XXXOX Black 2 52
+XOOXXXX-XXOOXXX-XOXOOXXOXOXXOOXOXXOOXXXOXOOXXXXOXO-----OX------- Black 57 8
+-OOOOOO---OXOO-OOOXOOOOOXOOOOXOOXOOOXOOOOOOOOOO---XXOX-----XXXX- Black 9 24
