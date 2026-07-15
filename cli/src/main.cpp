@@ -25,15 +25,16 @@ void printBoard(const reversi::Position& p) {
 }
 
 void printUsage() {
-    std::cout << "reversi-cli " << REVERSI_VERSION << "\n"
-              << "Usage: reversi-cli <command>\n\n"
-              << "Commands:\n"
-              << "  version         Print version\n"
-              << "  start           Print the initial position (toolchain smoke test)\n"
-              << "  perft <depth>   Print node counts for depths 1..<depth> from the start position\n"
-              << "  bench           (arrives with M2)\n"
-              << "  selfplay        (arrives with M2)\n"
-              << "  solve           (arrives with M5)\n";
+    std::cout
+        << "reversi-cli " << REVERSI_VERSION << "\n"
+        << "Usage: reversi-cli <command>\n\n"
+        << "Commands:\n"
+        << "  version         Print version\n"
+        << "  start           Print the initial position (toolchain smoke test)\n"
+        << "  perft <depth>   Print node counts for depths 1..<depth> from the start position\n"
+        << "  bench           (arrives with M2)\n"
+        << "  selfplay        (arrives with M2)\n"
+        << "  solve           (arrives with M5)\n";
 }
 
 // Parses a positive perft depth; returns nullopt on anything else (missing arg, not a

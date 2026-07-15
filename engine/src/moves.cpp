@@ -15,14 +15,30 @@ constexpr Bitboard kNotFileH = ~kFileH;
 // file and need no masking. Every shift with an east/west component must mask out the
 // file the shift would otherwise wrap onto (e.g. shifting east from file h lands on file a
 // of the next rank, which is not adjacent on the board and must be discarded).
-constexpr Bitboard shiftNorth(Bitboard b) { return b >> 8; }
-constexpr Bitboard shiftSouth(Bitboard b) { return b << 8; }
-constexpr Bitboard shiftEast(Bitboard b) { return (b << 1) & kNotFileA; }
-constexpr Bitboard shiftWest(Bitboard b) { return (b >> 1) & kNotFileH; }
-constexpr Bitboard shiftNorthEast(Bitboard b) { return (b >> 7) & kNotFileA; }
-constexpr Bitboard shiftNorthWest(Bitboard b) { return (b >> 9) & kNotFileH; }
-constexpr Bitboard shiftSouthEast(Bitboard b) { return (b << 9) & kNotFileA; }
-constexpr Bitboard shiftSouthWest(Bitboard b) { return (b << 7) & kNotFileH; }
+constexpr Bitboard shiftNorth(Bitboard b) {
+    return b >> 8;
+}
+constexpr Bitboard shiftSouth(Bitboard b) {
+    return b << 8;
+}
+constexpr Bitboard shiftEast(Bitboard b) {
+    return (b << 1) & kNotFileA;
+}
+constexpr Bitboard shiftWest(Bitboard b) {
+    return (b >> 1) & kNotFileH;
+}
+constexpr Bitboard shiftNorthEast(Bitboard b) {
+    return (b >> 7) & kNotFileA;
+}
+constexpr Bitboard shiftNorthWest(Bitboard b) {
+    return (b >> 9) & kNotFileH;
+}
+constexpr Bitboard shiftSouthEast(Bitboard b) {
+    return (b << 9) & kNotFileA;
+}
+constexpr Bitboard shiftSouthWest(Bitboard b) {
+    return (b << 7) & kNotFileH;
+}
 
 using ShiftFn = Bitboard (*)(Bitboard);
 

@@ -71,7 +71,9 @@ Board fromPosition(const Position& p) {
         const int rank = sq / 8;
         const int file = sq % 8;
         const Bitboard m = bit(sq);
-        b.cells[rank][file] = (p.own & m) != 0 ? Cell::Own : (p.opp & m) != 0 ? Cell::Opp : Cell::Empty;
+        b.cells[rank][file] = (p.own & m) != 0   ? Cell::Own
+                              : (p.opp & m) != 0 ? Cell::Opp
+                                                 : Cell::Empty;
     }
     return b;
 }

@@ -31,11 +31,12 @@ void playAndCompareOneGame(std::mt19937& rng) {
     Position pos = Position::start();
     naive::Board board = naive::start();
     constexpr int kMaxPlies = 200; // real games terminate well under this; guards against a
-                                    // hang if a bug makes isGameOver never agree.
+                                   // hang if a bug makes isGameOver never agree.
 
     for (int ply = 0; ply < kMaxPlies; ++ply) {
         ASSERT_EQ(naive::toPosition(board), pos) << "position drift at ply " << ply;
-        ASSERT_EQ(isGameOver(pos), naive::isGameOver(board)) << "isGameOver disagreement at ply " << ply;
+        ASSERT_EQ(isGameOver(pos), naive::isGameOver(board))
+            << "isGameOver disagreement at ply " << ply;
         if (isGameOver(pos)) {
             return;
         }
