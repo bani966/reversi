@@ -26,8 +26,8 @@ PlayerFn randomPlayer(unsigned seed) {
 // already slow (~5-10s/game) — deliberately not pushed deeper than measured to be useful.
 constexpr int kExitCriterionDepth = 10;
 
-PlayerFn searchPlayer() {
-    return [](const Position& p) { return search(p, kExitCriterionDepth).bestMove; };
+PlayerFn searchPlayer(int depth) {
+    return [depth](const Position& p) { return search(p, depth).bestMove; };
 }
 
 TEST(Selfplay, GameTerminatesWithAValidDiscCount) {
@@ -48,16 +48,27 @@ TEST(Selfplay, MatchTallySumsToGameCount) {
     EXPECT_EQ(result.aWins + result.bWins + result.draws, 20);
 }
 
-// Fast (~10 games/side) regression smoke test at the same depth as the full exit-criterion
-// matches below: catches a search/eval regression quickly on every `ctest` run. The vs-random
-// threshold (not a strict 0-losses check) matches the measured ~97% win rate at this sample
-// size with a safety margin — see kExitCriterionDepth's comment and the DISABLED_ tests below
-// for the full-sample numbers this is derived from.
-TEST(Selfplay, SmokeVsRandomAndGreedy) {
-    const MatchResult vsRandom = playMatch(searchPlayer(), randomPlayer(2026), 10);
-    EXPECT_GE(vsRandom.aWins, 8); // ~97% true win rate: P(<8/10) is well under 1%
+// Deliberately much cheaper than kExitCriterionDepth: this test's only job is "did a real
+// regression get introduced," not reproducing the exit-criterion statistic (that's what the
+// DISABLED_ tests below are for). Depth only limits the AI's per-move lookahead - a full game
+// still runs to completion regardless (see engine/src/selfplay.cpp's playGame), so this still
+// exercises the whole rules/game-loop pipeline end to end, just with weaker play.
+constexpr int kSmokeTestDepth = 6;
+constexpr int kSmokeTestGames = 4;
 
-    const MatchResult vsGreedy = playMatch(searchPlayer(), PlayerFn(pickGreedyMove), 10);
+// Fast regression smoke test: catches a search/eval/game-loop regression quickly on every
+// `ctest` run. Fixed seed, so this is deterministic, not statistical - the thresholds below
+// are what this exact seed/depth/game-count combination actually produces (verified directly,
+// not assumed), not a confidence-interval calculation like the exit-criterion tests use.
+TEST(Selfplay, SmokeVsRandomAndGreedy) {
+    const MatchResult vsRandom =
+        playMatch(searchPlayer(kSmokeTestDepth), randomPlayer(2026), kSmokeTestGames);
+    // Allows at most one loss to random; measured a clean 4/4 sweep with this seed, so there's
+    // a full game of slack rather than a razor-thin margin.
+    EXPECT_GE(vsRandom.aWins, kSmokeTestGames - 1);
+
+    const MatchResult vsGreedy =
+        playMatch(searchPlayer(kSmokeTestDepth), PlayerFn(pickGreedyMove), kSmokeTestGames);
     EXPECT_EQ(vsGreedy.bWins, 0);
     EXPECT_EQ(vsGreedy.draws, 0);
 }
@@ -70,7 +81,8 @@ TEST(Selfplay, SmokeVsRandomAndGreedy) {
 //
 // vs greedy: search(depth=10) wins literally 100/100, measured.
 TEST(Selfplay, DISABLED_ExitCriterion100VsGreedy) {
-    const MatchResult result = playMatch(searchPlayer(), PlayerFn(pickGreedyMove), 100);
+    const MatchResult result =
+        playMatch(searchPlayer(kExitCriterionDepth), PlayerFn(pickGreedyMove), 100);
     EXPECT_EQ(result.aWins, 100);
     EXPECT_EQ(result.bWins, 0);
     EXPECT_EQ(result.draws, 0);
@@ -80,7 +92,8 @@ TEST(Selfplay, DISABLED_ExitCriterion100VsGreedy) {
 // kExitCriterionDepth's comment for why. Asserting a >=95/100 threshold honestly records what
 // was measured instead of claiming a zero-loss result that isn't real.
 TEST(Selfplay, DISABLED_ExitCriterionVsRandom) {
-    const MatchResult result = playMatch(searchPlayer(), randomPlayer(2026), 100);
+    const MatchResult result =
+        playMatch(searchPlayer(kExitCriterionDepth), randomPlayer(2026), 100);
     EXPECT_GE(result.aWins, 95);
     EXPECT_EQ(result.draws, 0);
 }
