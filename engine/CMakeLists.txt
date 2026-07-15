@@ -5,6 +5,8 @@ add_library(reversi_engine STATIC
     src/perft.cpp
     src/eval.cpp
     src/search.cpp
+    src/players.cpp
+    src/selfplay.cpp
 )
 add_library(reversi::engine ALIAS reversi_engine)
 

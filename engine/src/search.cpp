@@ -33,8 +33,7 @@ int negamax(const Position& pos, int depth, int alpha, int beta, const EvalFn& e
     int best = -kInfinity;
     for (Bitboard b = moves; b != 0; b &= b - 1) {
         const int square = std::countr_zero(b);
-        const int score =
-            -negamax(applyMove(pos, square), depth - 1, -beta, -alpha, eval, nodes);
+        const int score = -negamax(applyMove(pos, square), depth - 1, -beta, -alpha, eval, nodes);
         if (score > best) {
             best = score;
         }

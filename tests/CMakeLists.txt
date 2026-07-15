@@ -17,6 +17,8 @@ add_executable(engine_tests
     engine/perft_test.cpp
     engine/eval_test.cpp
     engine/search_test.cpp
+    engine/players_test.cpp
+    engine/selfplay_test.cpp
     support/naive_reference.cpp
 )
 target_link_libraries(engine_tests PRIVATE reversi::engine GTest::gtest_main reversi_warnings)
