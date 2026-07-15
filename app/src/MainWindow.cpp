@@ -79,7 +79,7 @@ QString buildChromeStyleSheet() {
             color: %2;
             font-family: "Segoe UI";
             font-weight: 500;
-            border-top: 1px solid %5;
+            border: none;
         }
     )")
         .arg(theme.windowBackground.name()) // %1
