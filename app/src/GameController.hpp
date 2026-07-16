@@ -3,6 +3,7 @@
 #include "BoardWidget.hpp"
 
 #include "reversi/cancellation.hpp"
+#include "reversi/move_selector.hpp"
 #include "reversi/position.hpp"
 #include "reversi/search.hpp"
 
@@ -11,6 +12,10 @@
 #include <QStringList>
 #include <memory>
 #include <thread>
+
+namespace reversi {
+class OpeningBook;
+} // namespace reversi
 
 // The "thin controller/view-model": owns the game state and all turn-taking/rules
 // orchestration. BoardWidget only renders and reports clicks; it never touches reversi::
@@ -66,6 +71,15 @@ private:
     // raw-pointer handoff is safe. unique_ptr rather than a value so the header doesn't need
     // the table's size decision (it lives with the other AI constants in the .cpp).
     std::unique_ptr<reversi::TranspositionTable> tt_;
+    // A SEPARATE table for selectMove()'s solveExact branch - never the same object as tt_ (see
+    // move_selector.hpp / solver.hpp's doc comments on why sharing one table between the solver
+    // and heuristic search would silently corrupt the solver's exactness).
+    std::unique_ptr<reversi::TranspositionTable> solverTt_;
+    // Off by default: no loading path exists yet to construct a real OpeningBook (that's a
+    // later step), so this is a structural control point only - mirrors
+    // lastMoveHighlightEnabled_'s "control point exists, default off" pattern. Non-owning: this
+    // object never constructs or destroys an OpeningBook itself.
+    const reversi::OpeningBook* book_ = nullptr;
     std::shared_ptr<reversi::CancellationToken> cancellation_;
     // Bumped on every new search and every cancellation, so a result that arrives after being
     // superseded (by a new search or a new game) can be recognized as stale and discarded even
