@@ -27,5 +27,5 @@ private:
     QStatusBar* statusBar_;
     GameController* controller_;
 
-    void createGameMenu();
+    void createMenus();
 };

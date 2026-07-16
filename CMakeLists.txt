@@ -32,13 +32,18 @@ if(REVERSI_BUILD_CLI)
     add_subdirectory(cli)
 endif()
 
-if(REVERSI_BUILD_APP)
-    add_subdirectory(app)
-endif()
-
 if(REVERSI_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# Added after the REVERSI_BUILD_TESTS block (M9 phase 2): app/CMakeLists.txt defines its own
+# app_tests target (gtest_discover_tests) when REVERSI_BUILD_TESTS is also ON, mirroring the
+# tools/ subdirectory's already-working position below - enable_testing() must have already run
+# in this (ancestor) scope for that to register reliably, rather than relying on unspecified
+# ordering behavior.
+if(REVERSI_BUILD_APP)
+    add_subdirectory(app)
 endif()
 
 if(REVERSI_BUILD_TOOLS)

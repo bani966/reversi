@@ -8,9 +8,12 @@
 #include <QAction>
 #include <QCloseEvent>
 #include <QEvent>
+#include <QFileDialog>
 #include <QHBoxLayout>
+#include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QPalette>
 #include <QStatusBar>
 #include <QVBoxLayout>
@@ -167,27 +170,131 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(controller_, &GameController::statusChanged, this,
             [this](const QString& text) { statusBar_->showMessage(text); });
 
-    createGameMenu();
+    createMenus();
 
-    controller_->newGame(GameController::GameMode::HumanVsHuman);
+    controller_->newGame(GameMode::HumanVsHuman);
 }
 
-void MainWindow::createGameMenu() {
+void MainWindow::createMenus() {
+    // File: save/load (this app's own JSON format) and import/export (plain-text transcript and
+    // 65-char position formats) - all six are file-dialog-based, one consistent interaction
+    // pattern rather than mixing in a separate paste-text-dialog pattern (M9 phase 2).
+    QMenu* fileMenu = menuBar_->addMenu(QStringLiteral("&File"));
+
+    QAction* saveGame = fileMenu->addAction(QStringLiteral("Save Game..."));
+    saveGame->setShortcut(QKeySequence::Save);
+    connect(saveGame, &QAction::triggered, this, [this] {
+        const QString path = QFileDialog::getSaveFileName(
+            this, QStringLiteral("Save Game"), QString(), QStringLiteral("Reversi Save (*.json)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        if (!controller_->saveGame(path)) {
+            QMessageBox::warning(this, QStringLiteral("Save Game"),
+                                 controller_->lastErrorMessage());
+        }
+    });
+
+    QAction* loadGame = fileMenu->addAction(QStringLiteral("Load Game..."));
+    loadGame->setShortcut(QKeySequence::Open);
+    connect(loadGame, &QAction::triggered, this, [this] {
+        const QString path = QFileDialog::getOpenFileName(
+            this, QStringLiteral("Load Game"), QString(), QStringLiteral("Reversi Save (*.json)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        if (!controller_->loadGame(path)) {
+            QMessageBox::warning(this, QStringLiteral("Load Game"),
+                                 controller_->lastErrorMessage());
+        }
+    });
+
+    fileMenu->addSeparator();
+
+    QAction* exportTranscript = fileMenu->addAction(QStringLiteral("Export Transcript..."));
+    connect(exportTranscript, &QAction::triggered, this, [this] {
+        const QString path =
+            QFileDialog::getSaveFileName(this, QStringLiteral("Export Transcript"), QString(),
+                                         QStringLiteral("Text Transcript (*.txt)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        if (!controller_->exportTranscript(path)) {
+            QMessageBox::warning(this, QStringLiteral("Export Transcript"),
+                                 controller_->lastErrorMessage());
+        }
+    });
+
+    QAction* importTranscript = fileMenu->addAction(QStringLiteral("Import Transcript..."));
+    connect(importTranscript, &QAction::triggered, this, [this] {
+        const QString path =
+            QFileDialog::getOpenFileName(this, QStringLiteral("Import Transcript"), QString(),
+                                         QStringLiteral("Text Transcript (*.txt)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        if (!controller_->importTranscript(path)) {
+            QMessageBox::warning(this, QStringLiteral("Import Transcript"),
+                                 controller_->lastErrorMessage());
+        }
+    });
+
+    QAction* exportPosition = fileMenu->addAction(QStringLiteral("Export Position..."));
+    connect(exportPosition, &QAction::triggered, this, [this] {
+        const QString path =
+            QFileDialog::getSaveFileName(this, QStringLiteral("Export Position"), QString(),
+                                         QStringLiteral("Text Position (*.txt)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        if (!controller_->exportPosition(path)) {
+            QMessageBox::warning(this, QStringLiteral("Export Position"),
+                                 controller_->lastErrorMessage());
+        }
+    });
+
+    QAction* importPosition = fileMenu->addAction(QStringLiteral("Import Position..."));
+    connect(importPosition, &QAction::triggered, this, [this] {
+        const QString path =
+            QFileDialog::getOpenFileName(this, QStringLiteral("Import Position"), QString(),
+                                         QStringLiteral("Text Position (*.txt)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        if (!controller_->importPosition(path)) {
+            QMessageBox::warning(this, QStringLiteral("Import Position"),
+                                 controller_->lastErrorMessage());
+        }
+    });
+
+    // Edit: undo/redo (M9 phase 2) - standard desktop placement, standard-key shortcuts so the
+    // platform-correct binding (Ctrl+Y on Windows) is used automatically rather than hardcoded.
+    QMenu* editMenu = menuBar_->addMenu(QStringLiteral("&Edit"));
+
+    QAction* undo = editMenu->addAction(QStringLiteral("Undo"));
+    undo->setShortcut(QKeySequence::Undo);
+    connect(undo, &QAction::triggered, this, [this] { controller_->undo(); });
+
+    QAction* redo = editMenu->addAction(QStringLiteral("Redo"));
+    redo->setShortcut(QKeySequence::Redo);
+    connect(redo, &QAction::triggered, this, [this] { controller_->redo(); });
+
+    // Game: unchanged from before M9 phase 2.
     QMenu* gameMenu = menuBar_->addMenu(QStringLiteral("&Game"));
 
     QAction* humanVsHuman = gameMenu->addAction(QStringLiteral("New Game: Human vs Human"));
     connect(humanVsHuman, &QAction::triggered, this,
-            [this] { controller_->newGame(GameController::GameMode::HumanVsHuman); });
+            [this] { controller_->newGame(GameMode::HumanVsHuman); });
 
     QAction* humanIsBlack =
         gameMenu->addAction(QStringLiteral("New Game: Human vs AI (You play Black)"));
     connect(humanIsBlack, &QAction::triggered, this,
-            [this] { controller_->newGame(GameController::GameMode::HumanIsBlack); });
+            [this] { controller_->newGame(GameMode::HumanIsBlack); });
 
     QAction* humanIsWhite =
         gameMenu->addAction(QStringLiteral("New Game: Human vs AI (You play White)"));
     connect(humanIsWhite, &QAction::triggered, this,
-            [this] { controller_->newGame(GameController::GameMode::HumanIsWhite); });
+            [this] { controller_->newGame(GameMode::HumanIsWhite); });
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {

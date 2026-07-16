@@ -568,3 +568,68 @@ data features, analysis panel, settings panel, visual parity pass).
   At the wider size, the board's own letterbox margin and the panel are visually indistinguishable
   (same unstyled dark color, no border between them yet) - expected and out of scope until the
   phase 5 visual parity pass adds real panel styling.
+
+### Phase 2: game data features (save/load, undo/redo, import/export)
+
+- Built: `GameController::HistoryEntry`-backed `history_`/`historyIndex_` (one entry per fully
+  pass-resolved resting position) powering `undo()`/`redo()`; `GameNotation.hpp/.cpp` (new,
+  QtCore-only, zero `QWidget`/GUI coupling so `app_tests` can exercise it without a
+  `QApplication`) providing pure text/JSON <-> (mode, move-list, settings) conversions for three
+  independent file formats - this app's own versioned JSON save format, the standard Othello
+  transcript convention (concatenated lowercase squares, no separators/pass markers), and a
+  self-contained 65-char board-position snapshot (64-char row-major board + trailing side-to-move
+  character). `GameController` gained `saveGame`/`loadGame`/`exportTranscript`/`importTranscript`/
+  `exportPosition`/`importPosition`, all routed through `replayMoves()` (the one shared
+  move-legality validation path) and `applyLoadedHistory()` (the one shared commit path,
+  resetting `tt_`/`solverTt_` since a loaded/imported game is a different position tree - unlike
+  undo/redo, which deliberately keep the tables since they stay within the same tree). `MainWindow`
+  gained a File menu (Save/Load/Export Transcript/Import Transcript/Export Position/Import
+  Position) and an Edit menu (Undo/Redo, standard-key shortcuts) - all six file operations are
+  file-dialog-based with `QMessageBox::warning(lastErrorMessage())` on failure, one consistent
+  interaction pattern.
+- Interesting (a new file, not a modification): `GameMode` was split out of `GameController.hpp`
+  into its own `GameMode.hpp` specifically so `GameNotation.hpp` (needing the enum for its
+  save-file schema) doesn't have to include `GameController.hpp` itself - that header pulls in
+  `BoardWidget.hpp` (`QWidget`), which would force `GameNotation`'s dependents (`app_tests`) into
+  linking `Qt6::Widgets` for a module that only needs `QtCore`. A one-line enum move avoided a
+  much larger, wrong-shaped test-linkage dependency.
+- Interesting bug class avoided by design (same "one implementation of rules" principle as the
+  WTHOR pipeline): `GameNotation` only knows TEXT/JSON *shape* - it does not validate Othello move
+  legality itself, so a malformed or hand-edited file can still produce a `LoadedGame` with an
+  illegal move list. `GameController::replayMoves()` is the one place that actually replays a
+  loaded move list through the real engine and rejects it - `loadGame`/`importTranscript` both go
+  through it, so there is exactly one legality-checking path, not two that could silently drift.
+- Local build/test friction (environment, not code): both `ctest --preset dev`'s `app_tests`
+  discovery step and directly launching `reversi-app.exe` failed with a DLL-not-found error
+  (`STATUS_DLL_NOT_FOUND` / a native "Qt6Widgets.dll was not found" dialog) when Qt's `bin/`
+  directory wasn't on `PATH` - unrelated to this phase's code, just this dev machine's shell not
+  having Qt on `PATH` by default the way the IDE/build tooling does. Fixed locally by prepending
+  `C:/Qt/6.8.3/msvc2022_64/bin` to `PATH` before both `ctest` and launching the app; not a project
+  config change, since CMakeUserPresets.json already points at the right Qt install for the build
+  itself.
+- Manual GUI verification of all six file operations (this phase's own exit check, beyond the
+  automated `app_tests` suite), driven by real mouse/keyboard input (not `SendMessage`/focus-
+  independent posting) since Qt's native file dialogs and menus need genuine OS input to behave
+  like a real user's: played a short HvH game (d3, c5), then round-tripped Export Transcript ->
+  file contents exactly `"d3c5"`, Export Position -> exact 65-char string matching the on-screen
+  board (`"---X----" `/`"---XX---"`/`"--OOO---"` rows + trailing `B`), Import Transcript with a
+  different sequence (`"f5d6"`) actually changing the displayed board, Import Position round-
+  tripping the exported position file back onto the board exactly, and a malformed-transcript
+  file producing the exact `lastErrorMessage_` text in a warning dialog with the board left
+  untouched underneath - all five confirmed against real file contents/screenshots, not just "the
+  dialog closed without crashing."
+- Interesting automation-methodology finding, worth recording since it cost real time: driving a
+  native Windows Save/Open dialog via `SendKeys` after `SetForegroundWindow(dialogHwnd)` is not
+  reliable - `SetForegroundWindow` silently no-ops when called from a background process without
+  a preceding real input event (Windows' foreground-lock-timeout protection), so the keystrokes
+  went to whatever window genuinely had OS focus instead (in one case, this very terminal
+  session). The fix that actually works: a real mouse click (via `SetCursorPos` + `mouse_event`,
+  genuine hardware input, not `PostMessage`) on the target control itself, which triggers Windows'
+  normal click-to-activate behavior - confirmed via `GetForegroundWindow()` equality right after
+  the click, every time, before sending any keystrokes. Also: typing a full absolute path directly
+  into a save/open dialog's filename field is fragile (its combo-box autocomplete can silently
+  substitute a different matching MRU entry, once landing in a completely wrong prior session's
+  scratch folder); navigating via the dialog's breadcrumb bar instead (click its empty space to
+  get an editable address field, type the target *folder* only, confirm, then type just the
+  filename in the File name field) is the robust pattern and is what the verification above
+  actually used.

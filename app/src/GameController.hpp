@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BoardWidget.hpp"
+#include "GameMode.hpp"
 
 #include "reversi/cancellation.hpp"
 #include "reversi/move_selector.hpp"
@@ -11,7 +12,9 @@
 #include <QString>
 #include <QStringList>
 #include <memory>
+#include <optional>
 #include <thread>
+#include <vector>
 
 namespace reversi {
 class OpeningBook;
@@ -24,12 +27,6 @@ class GameController : public QObject {
     Q_OBJECT
 
 public:
-    enum class GameMode {
-        HumanVsHuman,
-        HumanIsBlack,
-        HumanIsWhite,
-    };
-
     explicit GameController(QObject* parent = nullptr);
     ~GameController() override;
 
@@ -46,6 +43,33 @@ public:
     // unconditionally either way - only whether it's exposed via DisplayState is gated.
     void setLastMoveHighlightEnabled(bool enabled);
 
+    // M9 phase 2: undo/redo navigate history_ without ever calling advanceTurn()/
+    // startAiSearch() - this is the user rewinding/replaying, not a request for the AI to move
+    // again. In Human-vs-AI modes, a single call skips past the AI's own turn so it always lands
+    // back on the human's turn. tt_/solverTt_ are deliberately NOT cleared (unlike newGame()) -
+    // undo/redo stay within the same game's position tree, so cached entries are still valid;
+    // clearing them would be a pure, avoidable performance regression, not a correctness fix.
+    bool canUndo() const;
+    bool canRedo() const;
+    void undo();
+    void redo();
+
+    // Save/load: this app's own JSON format (GameNotation::toSaveJson/fromSaveJson). Import/
+    // export: a plain-text Othello transcript, and a 65-char board-position snapshot
+    // (GameNotation::toTranscript/fromTranscript, toBoardString/fromBoardString). All six
+    // return false and leave the current game completely untouched on any failure (malformed
+    // file, illegal move sequence) - lastErrorMessage() then holds a human-readable reason for
+    // the caller's error dialog. Unlike undo/redo, a successful load/import DOES call
+    // advanceTurn() - resuming a loaded game should behave exactly like having played up to that
+    // point normally, including auto-starting an AI search if it's the AI's turn.
+    bool saveGame(const QString& filePath) const;
+    bool loadGame(const QString& filePath);
+    bool exportTranscript(const QString& filePath) const;
+    bool importTranscript(const QString& filePath);
+    bool exportPosition(const QString& filePath) const;
+    bool importPosition(const QString& filePath);
+    QString lastErrorMessage() const { return lastErrorMessage_; }
+
 public slots:
     void onSquareClicked(int square);
 
@@ -54,6 +78,15 @@ signals:
     void statusChanged(const QString& text);
 
 private:
+    // One entry per fully pass-resolved resting position - i.e. exactly what advanceTurn()
+    // pushes each time it's called, never a transient pre-pass state (forced passes are resolved
+    // before a new entry is recorded, both here and in replayMoves() below, so history_[i]
+    // always matches pos_/blackToMove_/lastMoveSquare_ exactly when historyIndex_ == i).
+    struct HistoryEntry {
+        reversi::Position position;
+        bool blackToMove;
+        int lastMoveSquare; // -1 for the start entry (index 0)
+    };
     // Own/opp-relative-to-mover, same convention as reversi::Position everywhere in engine/;
     // pos_.own belongs to black iff blackToMove_, toggled in lockstep with applyMove/applyPass
     // (the same invariant engine/src/selfplay.cpp's playGame relies on).
@@ -65,6 +98,16 @@ private:
     // relevant thing to highlight) - only newGame() and a fresh applyMove() touch this.
     int lastMoveSquare_ = -1;
     bool lastMoveHighlightEnabled_ = false;
+
+    // history_[0] is always the game's start position (Position::start() for a normal new game,
+    // or an imported board for a position import); history_[historyIndex_] always exactly
+    // matches pos_/blackToMove_/lastMoveSquare_ (see HistoryEntry's doc comment above).
+    std::vector<HistoryEntry> history_;
+    std::size_t historyIndex_ = 0;
+    // Set on any save/load/import/export failure; read by lastErrorMessage(). mutable so the
+    // const export methods (saveGame/exportTranscript/exportPosition) can still report why a
+    // file write failed without needing to be non-const themselves.
+    mutable QString lastErrorMessage_;
 
     std::thread aiThread_;
     // Owned here, used by the worker thread during a search; see startAiSearch for why the
@@ -90,10 +133,44 @@ private:
     int searchGeneration_ = 0;
 
     bool isHumanTurn() const;
+    bool isHumanTurnFor(bool blackToMove) const;
     void advanceTurn();
     void emitBoardState();
     void emitStatus(const QStringList& passMessages);
 
     void startAiSearch();
     void onAiSearchFinished(const reversi::SearchResult& result, int generation);
+
+    // Shared by onSquareClicked/onAiSearchFinished: applies a real move to pos_/blackToMove_/
+    // lastMoveSquare_ and discards any redo tail. Does NOT touch history_ itself - advanceTurn()
+    // (called right after, by both callers) is the single place that resolves forced passes and
+    // records the resulting resting position, so it's the only thing that ever pushes to
+    // history_ during live play.
+    void commitMove(int square);
+    // Shared by undo/redo: restores pos_/blackToMove_/lastMoveSquare_ from history_[index] and
+    // emits the resulting state, without calling advanceTurn()/startAiSearch() (see the public
+    // undo()/redo() doc comment above for why).
+    void restoreFromHistory(std::size_t index);
+    // Replays `moves` from (start, startBlackToMove), resolving forced passes exactly like
+    // advanceTurn() does, into a full HistoryEntry sequence. Returns nullopt (without partially
+    // building anything usable) the first time a move isn't legal for the position it would be
+    // played from - the one shared validation path for loadGame/importTranscript, so a
+    // corrupted/hand-edited file fails cleanly rather than desyncing state.
+    std::optional<std::vector<HistoryEntry>> replayMoves(const reversi::Position& start,
+                                                         bool startBlackToMove,
+                                                         const std::vector<int>& moves) const;
+    // Shared commit path for loadGame/importTranscript/importPosition: resets tt_/solverTt_
+    // (this genuinely is a different position tree, unlike undo/redo - see the public API doc
+    // comment), installs the given history wholesale, and calls advanceTurn()'s non-history-
+    // pushing counterpart to emit state and possibly start an AI search.
+    void applyLoadedHistory(GameMode mode, std::vector<HistoryEntry> history,
+                            bool lastMoveHighlightEnabled);
+    // The move list for history_[1..historyIndex_] - shared by saveGame/exportTranscript, which
+    // both export "what's currently on screen", not any undone redo tail.
+    std::vector<int> currentMoveList() const;
+    // The non-history-pushing half of advanceTurn(): emits boardChanged/statusChanged and starts
+    // an AI search if appropriate. Factored out so applyLoadedHistory() can reuse it without
+    // advanceTurn() pushing a second, duplicate history_ entry on top of the one replayMoves()
+    // already built.
+    void finalizeTurn(const QStringList& passMessages);
 };
