@@ -22,7 +22,7 @@ std::uint32_t readU32LE(std::istream& in) {
         throw std::runtime_error("unexpected end of weight file while reading a 4-byte field");
     }
     return static_cast<std::uint32_t>(b[0]) | (static_cast<std::uint32_t>(b[1]) << 8U) |
-          (static_cast<std::uint32_t>(b[2]) << 16U) | (static_cast<std::uint32_t>(b[3]) << 24U);
+           (static_cast<std::uint32_t>(b[2]) << 16U) | (static_cast<std::uint32_t>(b[3]) << 24U);
 }
 
 std::int32_t readI32LE(std::istream& in) {
@@ -94,7 +94,8 @@ int PatternEvaluator::evaluate(const Position& p) const {
     const Bucket& bucket = bucketFor(p.emptyCount());
     double sum = bucket.intercept;
     for (const pattern::PatternClass& cls : pattern::allPatternClasses()) {
-        const std::vector<float>& weights = bucket.weightsByShape[static_cast<std::size_t>(cls.shapeId)];
+        const std::vector<float>& weights =
+            bucket.weightsByShape[static_cast<std::size_t>(cls.shapeId)];
         for (const std::vector<int>& instance : cls.instances) {
             const int index = pattern::ternaryIndex(p, instance);
             sum += weights[static_cast<std::size_t>(index)];
