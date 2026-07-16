@@ -471,30 +471,43 @@ fix), a conservative default t shipped with honest real numbers, and wired in of
   effect," not agreement-by-eye. Corrected in both places before shipping this milestone's
   writeup, not after.
 - Reconciling the inconclusive match result against step 3's depth diagnostic (which *did* show a
-  clear benefit - depth 15 vs. 14, same 800ms/2500ms budget, same start position): that diagnostic
-  only ever probed the single opening position, repeatedly. A real game spends most of its length
-  past the opening, in the mid/endgame, where fewer legal moves mean less for jittered threads to
-  usefully diverge on - a plausible reason a real, confirmed per-position mechanism might not
-  reliably show up as a measurable full-game edge, though this is a hypothesis, not something
-  tested directly (that would mean repeating the depth diagnostic across a spread of mid/endgame
-  positions, not just the opening - left for follow-up, not chased now, per the time-box note).
-- **Result-aggregation logic, explicitly checked** (a good question to ask given this is exactly
-  the bug class - "quietly returning the wrong thread's result" - that could hide inside an
-  underwhelming-but-not-obviously-broken outcome like this one): re-read `search.cpp`'s
-  `searchLazySmp` directly rather than trusting the earlier summary of it. Confirmed: it
-  unconditionally returns `results[0]` (thread 0's own `SearchResult` - `search.cpp`, the
-  `finalResult = results[0]` line), never "whichever thread completed the deepest iteration."
-  This is a fixed thread index by design, documented in both `search.cpp`'s inline comment and
-  `search.hpp`'s doc comment on `searchLazySmp` (helper threads 1..N-1's own results are
-  discarded entirely; their only contribution is the TT entries they leave behind for thread 0 to
-  benefit from). Not a bug - but worth stating plainly since the earlier depth diagnostic (step 3)
-  only ever observed the *returned* result's depth, which this confirms really is thread 0's own
-  completed depth, not some other thread's substituted in silently. One real consequence worth
-  noting as an additional, honest angle on the strength gap: any helper thread that happens to
-  search deeper than thread 0 on a given move has that extra depth thrown away entirely except via
-  whatever it left in the shared TT - so the 6.3x nps figure overstates how much of that work can
-  possibly help the move actually played, by design, independent of the opening-vs-midgame
-  hypothesis above.
+  clear benefit - depth 15 vs. 14, same 800ms/2500ms budget, same start position) means explaining
+  why a real, confirmed per-position mechanism doesn't reliably show up as a measurable full-game
+  edge. Two candidate explanations, one confirmed directly from the code, one still a hypothesis:
+  - **Confirmed from the code, not inferred from behavior** - result-aggregation logic, explicitly
+    checked (a good question to ask given this is exactly the bug class, "quietly returning the
+    wrong thread's result," that could hide inside an underwhelming-but-not-obviously-broken
+    outcome like this one): re-read `search.cpp`'s `searchLazySmp` directly rather than trusting
+    the earlier summary of it. Confirmed: it unconditionally returns `results[0]` (thread 0's own
+    `SearchResult` - `search.cpp`, the `finalResult = results[0]` line), never "whichever thread
+    completed the deepest iteration." This is a fixed thread index by design, documented in both
+    `search.cpp`'s inline comment and `search.hpp`'s doc comment on `searchLazySmp` (helper
+    threads 1..N-1's own results are discarded entirely; their only contribution is the TT
+    entries they leave behind for thread 0 to benefit from). Not a bug - but worth stating plainly
+    since the earlier depth diagnostic (step 3) only ever observed the *returned* result's depth,
+    which this confirms really is thread 0's own completed depth, not some other thread's
+    substituted in silently. The direct, mechanistic consequence for the strength gap: on any
+    given move, if a helper thread happens to search deeper than thread 0, that extra depth is
+    thrown away entirely except for whatever it left behind in the shared TT - so the 6.3x nps
+    figure measures total work done, not work that can possibly reach the move actually played.
+    This is a real, code-confirmed limit on how much of Lazy SMP's raw throughput gain could ever
+    convert into strength here, independent of which specific positions a game visits.
+  - **Still a hypothesis, not confirmed** - that diagnostic only ever probed the single opening
+    position, repeatedly, while a real game spends most of its length past the opening, in the
+    mid/endgame, where fewer legal moves mean less for jittered threads to usefully diverge on in
+    the first place. Confirming this would mean repeating the depth diagnostic across a spread of
+    mid/endgame positions, not just the opening - left for follow-up, not chased now, per the
+    time-box note.
+- **Scoped out, not attempted here (time-box)**: having thread 0's own iteration always be the
+  returned result is a real, if partial, explanation for the strength gap above, which raises the
+  obvious follow-up question of selecting whichever thread completed the deepest iteration instead
+  of always thread 0. That's a plausible **future improvement**, not a bug fix - correctness is
+  unaffected either way, since `search_lazy_smp_test.cpp` already proves any completed depth's
+  score exactly matches single-threaded search at that depth, regardless of which thread produced
+  it. It would need its own design pass (e.g. tracking each thread's own depth/score/bestMove
+  alongside a max-reduction step, still cheap since threads already join before returning) and
+  isn't attempted in this milestone, per the same time-box note guiding every other stopping point
+  here.
 - Left the test's assertion (`lazyWins + draws >= singleWins`, i.e. "not an outright regression",
   looser than requiring a win) in place but **failing** on this machine's data, deliberately not
   loosened further to force green - a threshold tuned to always pass would be exactly as

@@ -55,12 +55,15 @@ this size can't distinguish from an even split). The single-position depth diagn
 the parallelism mechanism itself works (a genuinely deeper completed depth reached under an
 identical time budget), but a measurable full-game strength edge was not established, nor ruled
 out, at this sample size. Reported as a genuine open question rather than smoothed over — see
-`DEVLOG.md` for the full investigation, including confirmation (re-checked directly against
-`search.cpp`, not assumed) that the result returned is always thread 0's own completed search and
-not a mis-aggregated substitute, and the leading hypothesis for the gap (the depth diagnostic only
-probes the opening position, while real games spend most of their length in positions with less
-for jittered threads to usefully diverge on) left for future follow-up rather than chased further
-here.
+`DEVLOG.md` for the full investigation, including a code-confirmed (not inferred) partial
+explanation: `searchLazySmp` always returns thread 0's own result by design (`search.cpp`), so any
+helper thread that searches deeper than thread 0 on a given move has that extra depth discarded
+except via its shared-TT contributions — a real limit on how much of the 6.3× nps figure could
+ever convert into strength, and a plausible future improvement (selecting the deepest-completed
+thread instead) scoped out of this milestone. Plus a second, still-speculative hypothesis: the
+depth diagnostic only probes the opening position, while real games spend most of their length in
+positions with less for jittered threads to usefully diverge on — left for future follow-up
+rather than chased further here.
 
 ## Layout
 
