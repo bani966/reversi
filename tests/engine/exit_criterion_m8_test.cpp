@@ -36,17 +36,22 @@ namespace {
 // iterations faster, buying it spare time before the soft deadline to attempt one more ply) needs
 // slack a 300ms soft deadline doesn't leave.
 //
-// Switching to the real production budget did NOT resolve the gap, though - three independent
-// 20-game runs across both budgets (300/800ms twice, then the corrected 800/2500ms) all landed
-// single-threaded ahead (9/10/1, 9/11/0, 9/11/0 - 27/32/1 combined across 60 games). The depth
+// Switching to the real production budget did NOT clearly resolve the gap, though - three
+// independent 20-game runs across both budgets (300/800ms twice, then the corrected 800/2500ms)
+// all landed single-threaded slightly ahead (9/10/1, 9/11/0, 9/11/0 - 27/32/1 combined across 60
+// games). At n=60 the win-rate standard error is ~6.5 percentage points, and the observed gap
+// from 50/50 is well inside one standard error - so this is NOT statistically distinguishable
+// from noise: it does not show single-threaded is actually stronger, only that a full-game
+// strength edge for Lazy SMP was not established (or ruled out) at this sample size. The depth
 // diagnostic's clear per-position benefit (depth 15 vs 14, same start position, same 800/2500ms
-// budget - see DEVLOG.md's step-3 entry) is real but evidently doesn't generalize into a net
-// full-game edge: that diagnostic only ever probed the opening position, while a real game spends
-// most of its length in the mid/endgame, where fewer legal moves mean less for jittered threads to
-// usefully diverge on and shared-TT contention has less redundant work to amortize against. This
-// is an honest, currently-unresolved negative-leaning finding, not swept under the rug - see
-// DEVLOG.md's step-4 entry for the full writeup and the real nps-scaling numbers (which ARE a
-// clear, unambiguous win, measured via `cli bench <depth> <threads>`).
+// budget - see DEVLOG.md's step-3 entry) confirms the parallelism mechanism itself works; a
+// leading hypothesis for why that isn't showing up as a measurable full-game edge is that the
+// diagnostic only ever probed the opening position, while a real game spends most of its length
+// in the mid/endgame, where fewer legal moves mean less for jittered threads to usefully diverge
+// on. See DEVLOG.md's step-4 entry for the full writeup, the real nps-scaling numbers (which ARE
+// a clear, unambiguous win, measured via `cli bench <depth> <threads>`), and confirmation that
+// searchLazySmp always returns thread 0's own result (a fixed index, not "whichever thread
+// finished deepest") - re-verified directly against search.cpp, not just assumed.
 
 constexpr TimeBudget kMatchBudget =
     TimeBudget{std::chrono::milliseconds{800}, std::chrono::milliseconds{2500}};
@@ -112,9 +117,12 @@ TEST(DISABLED_ExitCriterionM8, EqualTimeLazySmpVsSingleThreaded) {
     // Counting a draw as a non-loss states the actual bar this test wants ("not a clear
     // regression", not "must outright win"): it fails only if single-threaded wins an outright
     // majority over Lazy SMP's wins-plus-draws combined. As of step 4 this assertion is known to
-    // FAIL on this machine (9 + 0 draws = 9 < 11) - left failing deliberately rather than loosened
-    // further to force green, since the measured result is a real, reproducible finding (see the
-    // file header comment and DEVLOG.md), not sampling noise this bar should be tolerating away.
+    // FAIL on this machine (9 + 0 draws = 9 < 11), but a single 20-game sample's ~10 percentage-
+    // point-wide noise band (see the file header comment) means this simple binary bar isn't
+    // actually calibrated to detect statistical significance at this game count - left failing
+    // deliberately rather than loosened further, since a threshold that always passes would be
+    // just as uninformative as one that fails on noise. Treat a run of this test as a data point,
+    // not a verdict; DEVLOG.md's step-4 entry has the honest statistical read.
     EXPECT_GE(lazyWins + draws, singleWins);
 }
 

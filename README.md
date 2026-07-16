@@ -47,16 +47,20 @@ safely rejects genuine misses and torn/interleaved concurrent reads identically)
 local concurrent stress test and, more authoritatively, a dedicated ThreadSanitizer CI job added
 specifically for this milestone. Measured on this dev machine (Intel i7-9700, 8 physical cores,
 no hyperthreading): nps scales roughly 6.3× at 8 threads vs. 1, clearing the ≥3× target below
-with real margin — an unambiguous pass. Strength is the honest exception: a single-position depth
-diagnostic confirms the underlying mechanism does reach a genuinely deeper effective search
-(depth 15 vs. 14 under an identical time budget), but that did not translate into a net edge in
-real games — three independent 20-game equal-time matches against single-threaded search, across
-two different time budgets (including `GameController`'s actual production budget), all leaned
-modestly toward single-threaded (27 Lazy-SMP wins – 32 single-threaded wins – 1 draw across all
-60 games combined). This is reported as a genuine, unresolved finding rather than smoothed over —
-see `DEVLOG.md` for the full investigation, including the leading hypothesis (the depth
-diagnostic only probes the opening position, while real games spend most of their length in
-positions with less to parallelize) left for future follow-up rather than chased further here.
+with real margin — an unambiguous pass. Strength is the honest exception: no statistically
+significant strength difference was detected between Lazy SMP and single-threaded search at the
+tested time budgets (three independent 20-game equal-time matches across two budgets, including
+`GameController`'s actual production budget, 60 games combined — well within the noise a sample
+this size can't distinguish from an even split). The single-position depth diagnostic confirms
+the parallelism mechanism itself works (a genuinely deeper completed depth reached under an
+identical time budget), but a measurable full-game strength edge was not established, nor ruled
+out, at this sample size. Reported as a genuine open question rather than smoothed over — see
+`DEVLOG.md` for the full investigation, including confirmation (re-checked directly against
+`search.cpp`, not assumed) that the result returned is always thread 0's own completed search and
+not a mis-aggregated substitute, and the leading hypothesis for the gap (the depth diagnostic only
+probes the opening position, while real games spend most of their length in positions with less
+for jittered threads to usefully diverge on) left for future follow-up rather than chased further
+here.
 
 ## Layout
 
@@ -107,9 +111,10 @@ ctest --preset ci-linux
 | M10 | Release | Animations, sound, themes, installers, v1.0 |
 
 \* M8's engineering deliverable is complete, correct, and CI-verified (TSan-clean, nps clears the
-≥3× target with real margin); the strength leg of its exit criterion is not clearly met as
-measured — see the M8 paragraph above and `DEVLOG.md` for the honest numbers and the open
-follow-up hypothesis.
+≥3× target with real margin); the strength leg of its exit criterion is inconclusive, not
+failed — no statistically significant equal-time strength difference was detected in either
+direction at the sample size tested. See the M8 paragraph above and `DEVLOG.md` for the honest
+numbers and the open follow-up hypothesis.
 
 ## Benchmarks
 
