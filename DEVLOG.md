@@ -88,6 +88,39 @@ guide later, not the guide itself.
   reachable: drastically fewer nodes across the benchmark set, still a legal, `completed` result
   every time - not just "doesn't crash," a real positive control for the cut path itself.
 
+### Step 5: real data gen/fit + strength validation
+
+- Generated a real dataset (25 self-played games, seed 4242, depths 2-8 -> 1500 sampled
+  positions, ~40s) and fit a first real model: reduction=2 covering deep depths 4-8 (5 pairs),
+  sigma 3.0-4.2 discs.
+- Real negative finding (exactly the risk class the user flagged up front - "a bug doesn't
+  produce an obviously wrong score, it produces a search that's silently, gradually weaker"):
+  that first model was a clear NET LOSS in equal-time self-play at every t tried - 4/20 (t=2.0),
+  2/8 (t=6.0) - and increasing t by 4x barely moved move-agreement (15-16/21 across t=2..8),
+  which was the tell that this wasn't "not enough safety margin" (a bigger t should fix that)
+  but a cost/benefit problem: with reduction=2, MPC gets a shallow-probe opportunity at nearly
+  every internal node in the 4-8 depth range, and the "never triggers still costs extra nodes"
+  property proven in step 4's unit test was dominating - paying for probes without enough real
+  cuts to recoup the cost, so the achievable search depth under a fixed time budget actually
+  went DOWN. All of this happened with the on/off-equivalence and always/never-cuts unit tests
+  still fully green - correct code, bad cost/benefit tradeoff for that specific configuration,
+  a genuinely different failure mode than a score bug.
+- Fix (a configuration change, not new engineering, so still within the time-box): refit with
+  reduction=4 covering only the deeper pairs (6, 7, 8) - fewer eligible nodes, but each shallow
+  probe is cheaper relative to the subtree it replaces. Recovered a real edge: 5/8 (t=2.5,
+  quick check), confirmed 11/9 in a 20-game equal-time match, 16/21 move agreement against a
+  fixed depth-11 ground truth. Modest, not dramatic - expected for a linear model fit on one
+  global (a, b, sigma) per depth pair with no game-phase bucketing (unlike M6's PatternEvaluator,
+  which explicitly buckets by empty-square count for the same underlying reason: predicting
+  from an opening position is a different problem than predicting from a near-endgame one).
+- Shipped: `kDefaultMpcT = 2.5`, documented in mpc.hpp alongside the real numbers and the
+  reduction=2 negative finding, so a future re-tune starts from "reduction=4, deeper-only" and
+  doesn't have to rediscover the cost/benefit lesson from scratch.
+- Flagged improve later: per-phase (or per-empty-count) bucketed MPC coefficients, mirroring
+  PatternEvaluator's bucketing, would likely both widen safely-coverable depth range back toward
+  reduction=2's broader coverage AND improve the edge size - explicitly out of scope for this
+  milestone's time-box (a real engineering addition, not a config/t change).
+
 ## M0 — Scaffolding, CI
 
 - Built: repo layout (engine/cli/app/tests/tools), CMake presets, CI on Windows/macOS/Linux.

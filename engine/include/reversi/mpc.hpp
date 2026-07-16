@@ -6,11 +6,20 @@
 
 namespace reversi {
 
-// A reasonable, conservative default confidence multiplier (see MpcConfig::t) - placeholder
-// until M7 step 5's real equal-time self-play / move-agreement validation picks and documents
-// the actual chosen value from measured data, per this milestone's explicit time-box (implement
-// correctly, validate, pick one conservative t, stop - no exhaustive tuning).
-constexpr double kDefaultMpcT = 2.0;
+// Confidence multiplier for MpcConfig::t, picked from real measured data (M7 step 5) - see
+// DEVLOG.md and that step's commit message for the full numbers. Two configurations were
+// tried on a real fitted model (1500 self-played positions, depths 2-8): reduction=2 covering
+// deep depths 4-8 (5 pairs) was a clear NET LOSS in equal-time self-play at every t tried
+// (2, 3, 4, 6, 8) - the shallow-probe overhead at that many eligible nodes outweighed the
+// pruning benefit, a genuine finding, not a bug (the on/off-equivalence and always/never-cuts
+// unit tests all pass; this is real cost/benefit, not incorrectness). Switching to reduction=4
+// covering only the deeper pairs (6, 7, 8) - fewer eligible nodes, but each shallow probe is
+// cheaper relative to the subtree it replaces - recovered a real, if modest, edge: 11-9 in a
+// 20-game equal-time match at t=2.5 (budget 300ms soft / 800ms hard), 16/21 move agreement
+// against a fixed depth-11 ground truth. This is the shipped default: reduction=4, deep depths
+// 6-8 only. A model fit with a different depth-pair range should be re-validated, not assumed
+// to inherit this t.
+constexpr double kDefaultMpcT = 2.5;
 
 // Looks up fitted Multi-ProbCut coefficients for a given remaining search depth ("deep depth").
 // Built by `tools/mpc_fitter fit` from self-play-generated (shallowValue, deepValue) pairs (see
