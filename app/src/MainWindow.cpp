@@ -5,18 +5,28 @@
 #include "Palette.hpp"
 #include "TitleBarWidget.hpp"
 
+#include "reversi/analysis.hpp"
+#include "reversi/position.hpp"
+
 #include <QAction>
 #include <QCloseEvent>
 #include <QEvent>
 #include <QFileDialog>
+#include <QFont>
 #include <QHBoxLayout>
 #include <QKeySequence>
+#include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPalette>
+#include <QPlainTextEdit>
+#include <QPushButton>
 #include <QStatusBar>
+#include <QStringList>
 #include <QVBoxLayout>
+
+#include <cstdint>
 
 #ifdef Q_OS_WIN
 #define WIN32_LEAN_AND_MEAN
@@ -93,6 +103,61 @@ QString buildChromeStyleSheet() {
         .arg(theme.popupBackground.name())  // %4
         .arg(theme.panelBorder.name());     // %5
 }
+
+// M9 phase 3: a light styling pass on the analysis panel's own widgets (QPushButton/QLabel/
+// QPlainTextEdit aren't covered by buildChromeStyleSheet() above, which only targets
+// QMenuBar/QMenu/QStatusBar) - reuses the same chrome::palette() roles so the panel reads as
+// part of the app's existing dark chrome rather than default Qt widget styling. A full
+// chess.com-style visual match (rounded cards, the exact reference layout) is phase 5's
+// dedicated visual-parity pass, not attempted here.
+QString buildAnalysisPanelStyleSheet() {
+    const chrome::Palette& theme = chrome::palette();
+    return QStringLiteral(R"(
+        QPushButton {
+            background-color: %1;
+            color: %2;
+            border: 1px solid %3;
+            border-radius: 4px;
+            padding: 8px;
+            font-family: "Segoe UI";
+            font-weight: 600;
+        }
+        QPushButton:hover:enabled {
+            background-color: %4;
+        }
+        QPushButton:disabled {
+            color: %3;
+        }
+        QLabel {
+            color: %2;
+            font-family: "Segoe UI";
+        }
+        QPlainTextEdit {
+            background-color: %1;
+            color: %2;
+            border: 1px solid %3;
+            border-radius: 4px;
+            padding: 6px;
+        }
+    )")
+        .arg(theme.popupBackground.name()) // %1
+        .arg(theme.textColor.name())       // %2
+        .arg(theme.panelBorder.name())     // %3
+        .arg(theme.panelHover.name());     // %4
+}
+
+// "10094917" reads as clutter and doesn't fit the analysis panel's fixed ~300px width on one
+// line at a readable font size; "10.1M" is both more compact and the conventional way engine
+// node counts get displayed.
+QString formatNodeCount(std::uint64_t nodes) {
+    if (nodes >= 1'000'000) {
+        return QStringLiteral("%1M").arg(static_cast<double>(nodes) / 1'000'000.0, 0, 'f', 1);
+    }
+    if (nodes >= 1'000) {
+        return QStringLiteral("%1K").arg(static_cast<double>(nodes) / 1'000.0, 0, 'f', 1);
+    }
+    return QString::number(nodes);
+}
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
@@ -167,9 +232,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     controller_ = new GameController(this);
     connect(controller_, &GameController::boardChanged, board_, &BoardWidget::setDisplayState);
     connect(board_, &BoardWidget::squareClicked, controller_, &GameController::onSquareClicked);
-    connect(controller_, &GameController::statusChanged, this,
-            [this](const QString& text) { statusBar_->showMessage(text); });
+    connect(controller_, &GameController::statusChanged, this, [this](const QString& text) {
+        statusBar_->showMessage(text);
+        // canAnalyze() flips to false the instant the AI starts thinking, which happens inside
+        // startAiSearch() before its own statusChanged emit (see that function's own comment) -
+        // catching it here, not just on boardChanged, is what actually disables the button in
+        // time rather than only after the AI's move has already completed.
+        updateAnalyzeButtonEnabled();
+    });
 
+    setupAnalysisPanel();
     createMenus();
 
     controller_->newGame(GameMode::HumanVsHuman);
@@ -297,8 +369,110 @@ void MainWindow::createMenus() {
             [this] { controller_->newGame(GameMode::HumanIsWhite); });
 }
 
+// M9 phase 3: panel_'s first real content - "Analyze Position" triggers on-demand MultiPV
+// analysis of the CURRENT position (any GameMode, regardless of whose turn it is), rendering the
+// ranked lines plus a principal variation for the top line. QPlainTextEdit (read-only) rather
+// than a custom table/model widget - simplest thing that can show multiple lines plus a PV
+// string without building new machinery for a first pass; phase 5's visual-parity pass can
+// restyle this.
+void MainWindow::setupAnalysisPanel() {
+    panel_->setStyleSheet(buildAnalysisPanelStyleSheet());
+
+    auto* layout = new QVBoxLayout(panel_);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(8);
+
+    auto* headerLabel = new QLabel(QStringLiteral("Analysis"), panel_);
+    QFont headerFont = headerLabel->font();
+    headerFont.setPointSize(headerFont.pointSize() + 2);
+    headerFont.setBold(true);
+    headerLabel->setFont(headerFont);
+    layout->addWidget(headerLabel);
+
+    analyzeButton_ = new QPushButton(QStringLiteral("Analyze Position"), panel_);
+    layout->addWidget(analyzeButton_);
+
+    analysisStatusLabel_ = new QLabel(QStringLiteral("Ready"), panel_);
+    layout->addWidget(analysisStatusLabel_);
+
+    analysisResultsView_ = new QPlainTextEdit(panel_);
+    analysisResultsView_->setReadOnly(true);
+    analysisResultsView_->setPlaceholderText(
+        QStringLiteral("Click \"Analyze Position\" to rank candidate moves."));
+    // Fixed-pitch so the rank/move/score/depth columns line up - QPlainTextEdit's own default
+    // font is proportional, which reads as misaligned clutter with tabular data like this.
+    QFont monoFont(QStringLiteral("Consolas"));
+    monoFont.setStyleHint(QFont::Monospace);
+    analysisResultsView_->setFont(monoFont);
+    layout->addWidget(analysisResultsView_, 1);
+
+    connect(analyzeButton_, &QPushButton::clicked, this, [this] {
+        controller_->analyzePosition();
+        analysisStatusLabel_->setText(QStringLiteral("Analyzing..."));
+        updateAnalyzeButtonEnabled();
+    });
+    connect(controller_, &GameController::analysisFinished, this,
+            [this](const std::vector<reversi::RankedMove>& lines, const std::vector<int>& pv,
+                   bool blackToMove) {
+                analysisStatusLabel_->setText(QStringLiteral("Ready"));
+                renderAnalysisResults(lines, pv, blackToMove);
+                updateAnalyzeButtonEnabled();
+            });
+    // canAnalyze() depends on whether the AI is thinking, which changes every time the board
+    // does (a human move can trigger an AI search) - re-check on every boardChanged, not just
+    // when analysis itself starts/finishes.
+    connect(controller_, &GameController::boardChanged, this,
+            [this](const BoardWidget::DisplayState&) { updateAnalyzeButtonEnabled(); });
+}
+
+void MainWindow::updateAnalyzeButtonEnabled() {
+    const bool canAnalyze = controller_->canAnalyze();
+    analyzeButton_->setEnabled(canAnalyze);
+    // Analysis can become available again WITHOUT analysisFinished ever firing - e.g. starting a
+    // new game, undo/redo, or loading/importing while an analysis was running all cancel it
+    // outright (GameController::cancelAnalysis()) rather than letting it complete. Without this,
+    // the "Analyzing..." text left over from the cancelled run would linger, even though the
+    // button itself is correctly usable again.
+    if (canAnalyze && analysisStatusLabel_->text() == QStringLiteral("Analyzing...")) {
+        analysisStatusLabel_->setText(QStringLiteral("Ready"));
+    }
+}
+
+void MainWindow::renderAnalysisResults(const std::vector<reversi::RankedMove>& lines,
+                                       const std::vector<int>& pv, bool blackToMove) {
+    if (lines.empty()) {
+        analysisResultsView_->setPlainText(QStringLiteral("No analysis result."));
+        return;
+    }
+    QString text;
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        const reversi::RankedMove& line = lines[i];
+        // RankedMove::score is mover-relative (analysis.hpp); the panel's own display convention
+        // is fixed instead, chess.com-style: positive favors White, negative favors Black,
+        // regardless of whose turn was actually analyzed.
+        const int displayScore = blackToMove ? -line.score : line.score;
+        const QString scoreText = displayScore > 0 ? QStringLiteral("+%1").arg(displayScore)
+                                                   : QString::number(displayScore);
+        text += QStringLiteral("%1. %2   %3   (depth %4, %5 nodes)\n")
+                    .arg(i + 1)
+                    .arg(QString::fromStdString(reversi::squareToString(line.move)))
+                    .arg(scoreText)
+                    .arg(line.depth)
+                    .arg(formatNodeCount(line.nodes));
+        if (i == 0 && !pv.empty()) {
+            QStringList pvSquares;
+            for (int move : pv) {
+                pvSquares << QString::fromStdString(reversi::squareToString(move));
+            }
+            text += QStringLiteral("    PV: %1\n").arg(pvSquares.join(QStringLiteral(" ")));
+        }
+    }
+    analysisResultsView_->setPlainText(text);
+}
+
 void MainWindow::closeEvent(QCloseEvent* event) {
     controller_->cancelAiSearch();
+    controller_->cancelAnalysis();
     QMainWindow::closeEvent(event);
 }
 

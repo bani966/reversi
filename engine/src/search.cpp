@@ -321,9 +321,13 @@ int negamax(const Position& pos, int depth, int ply, int alpha, int beta, Search
 
 // Root search over an explicit (alphaInit, betaInit) window; see searchWindow's contract in
 // search.hpp for what a failed window means for the returned score/bestMove.
+// `excludedRootMoves` (MultiPV analysis, engine/include/reversi/analysis.hpp): any square it
+// contains is skipped entirely at the root - never explored, never compared, never returned as
+// bestMove. Defaulted to nullptr so every pre-existing call site is unaffected.
 SearchResult windowedSearch(const Position& p, int depth, int alphaInit, int betaInit,
                             const EvalFn& eval, const CancellationToken* cancellation, TtView tt,
-                            const Clock::time_point* hardDeadline, const MpcConfig* mpc) {
+                            const Clock::time_point* hardDeadline, const MpcConfig* mpc,
+                            const std::vector<int>* excludedRootMoves = nullptr) {
     SearchContext ctx = makeContext(eval, cancellation, tt, hardDeadline, mpc);
     int ttMove = -1;
     if (tt.table != nullptr) {
@@ -340,6 +344,11 @@ SearchResult windowedSearch(const Position& p, int depth, int alphaInit, int bet
     const int beta = betaInit;
     for (int i = 0; i < list.count; ++i) {
         const int square = list.squares[i];
+        if (excludedRootMoves != nullptr &&
+            std::find(excludedRootMoves->begin(), excludedRootMoves->end(), square) !=
+                excludedRootMoves->end()) {
+            continue;
+        }
         const Position child = applyMove(p, square);
         int score;
         if (i == 0) {
@@ -390,11 +399,15 @@ constexpr int kAspirationDelta = 8;
 // helper threads pass a per-thread-jittered value instead (see searchLazySmp below) - this is
 // the SAME driver reused for both single-threaded and multi-threaded searches, not a second
 // copy of the iterative-deepening logic.
+// `excludedRootMoves` (MultiPV analysis): forwarded unchanged into every windowedSearch() call
+// below - see that function's own doc comment. Defaulted to nullptr so every pre-existing call
+// site is unaffected.
 SearchResult iterativeDriver(const Position& p, int maxDepth, const EvalFn& eval,
                              const CancellationToken* cancellation, TtView tt,
                              const Clock::time_point* softDeadline,
                              const Clock::time_point* hardDeadline, const MpcConfig* mpc,
-                             int startDepth = 1) {
+                             int startDepth = 1,
+                             const std::vector<int>* excludedRootMoves = nullptr) {
     SearchResult deepest;
     deepest.completed = false; // stays false unless some iteration actually finishes
     std::uint64_t totalNodes = 0;
@@ -409,14 +422,14 @@ SearchResult iterativeDriver(const Position& p, int maxDepth, const EvalFn& eval
         if (!deepest.completed) {
             // First iteration (nothing to center a window on): full width.
             iteration = windowedSearch(p, depth, -kInfinity, kInfinity, eval, cancellation, tt,
-                                       hardDeadline, mpc);
+                                       hardDeadline, mpc, excludedRootMoves);
             totalNodes += iteration.nodes;
         } else {
             // Aspiration: assume this depth's score lands near the previous depth's.
             const int alpha = deepest.score - kAspirationDelta;
             const int beta = deepest.score + kAspirationDelta;
-            iteration =
-                windowedSearch(p, depth, alpha, beta, eval, cancellation, tt, hardDeadline, mpc);
+            iteration = windowedSearch(p, depth, alpha, beta, eval, cancellation, tt, hardDeadline,
+                                       mpc, excludedRootMoves);
             totalNodes += iteration.nodes;
             if (iteration.completed && (iteration.score <= alpha || iteration.score >= beta)) {
                 // Failed the window: the score is only a bound and the move untrustworthy.
@@ -424,7 +437,7 @@ SearchResult iterativeDriver(const Position& p, int maxDepth, const EvalFn& eval
                 // widening straight to full width keeps the failure path trivially correct;
                 // the happy path is where the speed lives anyway.)
                 iteration = windowedSearch(p, depth, -kInfinity, kInfinity, eval, cancellation, tt,
-                                           hardDeadline, mpc);
+                                           hardDeadline, mpc, excludedRootMoves);
                 totalNodes += iteration.nodes;
             }
         }
@@ -466,6 +479,25 @@ SearchResult searchTimed(const Position& p, int maxDepth, const TimeBudget& budg
     const Clock::time_point hardDeadline = start + budget.hard;
     return iterativeDriver(p, maxDepth, eval, cancellation, makeTtView(tt), &softDeadline,
                            &hardDeadline, mpc);
+}
+
+SearchResult searchExcludingMoves(const Position& p, int depth,
+                                  const std::vector<int>& excludedRootMoves, const EvalFn& eval,
+                                  const CancellationToken* cancellation, TranspositionTable* tt,
+                                  const MpcConfig* mpc) {
+    return windowedSearch(p, depth, -kInfinity, kInfinity, eval, cancellation, makeTtView(tt),
+                          nullptr, mpc, &excludedRootMoves);
+}
+
+SearchResult searchTimedExcludingMoves(const Position& p, int maxDepth, const TimeBudget& budget,
+                                       const std::vector<int>& excludedRootMoves,
+                                       const EvalFn& eval, const CancellationToken* cancellation,
+                                       TranspositionTable* tt, const MpcConfig* mpc) {
+    const Clock::time_point start = Clock::now();
+    const Clock::time_point softDeadline = start + budget.soft;
+    const Clock::time_point hardDeadline = start + budget.hard;
+    return iterativeDriver(p, maxDepth, eval, cancellation, makeTtView(tt), &softDeadline,
+                           &hardDeadline, mpc, /*startDepth=*/1, &excludedRootMoves);
 }
 
 namespace {

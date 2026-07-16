@@ -13,6 +13,7 @@ add_library(reversi_engine STATIC
     src/opening_book.cpp
     src/mpc.cpp
     src/move_selector.cpp
+    src/analysis.cpp
     src/players.cpp
     src/selfplay.cpp
 )

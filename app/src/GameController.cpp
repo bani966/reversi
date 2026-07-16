@@ -25,15 +25,22 @@ constexpr reversi::TimeBudget kAiTimeBudget{std::chrono::milliseconds{800},
 // entries from earlier searches stay valid - keys are full positions, stored depths are
 // remaining-depth - and pre-warm both cutoffs and move ordering for later searches.
 constexpr std::size_t kTranspositionTableEntries = std::size_t{1} << 20;
+// M9 phase 3: PV length cap for the analysis panel's top line - long enough to show a real
+// continuation, short enough that a shallow analysis depth (kAiMaxSearchDepth aside, a per-line
+// budget can still land at a modest completed depth) doesn't display a misleadingly long line
+// propped up by TT entries left over from unrelated exploration.
+constexpr int kMaxPvLength = 10;
 } // namespace
 
 GameController::GameController(QObject* parent)
     : QObject(parent),
       tt_(std::make_unique<reversi::TranspositionTable>(kTranspositionTableEntries)),
-      solverTt_(std::make_unique<reversi::TranspositionTable>(kTranspositionTableEntries)) {}
+      solverTt_(std::make_unique<reversi::TranspositionTable>(kTranspositionTableEntries)),
+      analysisTt_(std::make_unique<reversi::TranspositionTable>(kTranspositionTableEntries)) {}
 
 GameController::~GameController() {
     cancelAiSearch();
+    cancelAnalysis();
 }
 
 bool GameController::isHumanTurn() const {
@@ -54,6 +61,7 @@ bool GameController::isHumanTurnFor(bool blackToMove) const {
 
 void GameController::newGame(GameMode mode) {
     cancelAiSearch(); // joins the worker first, so clearing the tables below is race-free
+    cancelAnalysis(); // a new game invalidates any in-flight analysis of the old position too
     tt_->clear();     // entries describe the previous game's positions; don't carry them over
     solverTt_->clear();
     mode_ = mode;
@@ -78,6 +86,18 @@ void GameController::cancelAiSearch() {
     if (aiThread_.joinable()) {
         aiThread_.join();
     }
+    aiSearchInFlight_ = false;
+}
+
+void GameController::cancelAnalysis() {
+    if (analysisCancellation_) {
+        analysisCancellation_->requestStop();
+    }
+    ++analysisGeneration_; // even a result that completes anyway is now stale
+    if (analysisThread_.joinable()) {
+        analysisThread_.join();
+    }
+    analysisInFlight_ = false;
 }
 
 void GameController::onSquareClicked(int square) {
@@ -126,13 +146,20 @@ void GameController::finalizeTurn(const QStringList& passMessages) {
 }
 
 void GameController::startAiSearch() {
+    cancelAiSearch(); // defensive: keeps "at most one aiThread_ alive" airtight even if a
+                      // future mode ever dispatches AI twice in a row
+    cancelAnalysis(); // analysis of the current position is redundant once the AI is about to
+                      // move there anyway, and canAnalyze() disables the panel button meanwhile
+    ++searchGeneration_;
+    const int myGeneration = searchGeneration_;
+    // Set BEFORE emitting statusChanged below: a direct (same-thread) Qt connection runs its
+    // slot synchronously inside emit, so canAnalyze() must already reflect "AI thinking" by the
+    // time any slot observes this signal - MainWindow's panel re-checks canAnalyze() exactly
+    // here (see MainWindow.cpp's statusChanged connection), not just on boardChanged.
+    aiSearchInFlight_ = true;
     const QString mover = blackToMove_ ? QStringLiteral("Black") : QStringLiteral("White");
     emit statusChanged(mover + QStringLiteral(" to move. (AI thinking...)"));
 
-    cancelAiSearch(); // defensive: keeps "at most one aiThread_ alive" airtight even if a
-                      // future mode ever dispatches AI twice in a row
-    ++searchGeneration_;
-    const int myGeneration = searchGeneration_;
     cancellation_ = std::make_shared<reversi::CancellationToken>();
     const std::shared_ptr<reversi::CancellationToken> cancellationCopy = cancellation_;
     const reversi::Position posCopy = pos_;
@@ -163,8 +190,63 @@ void GameController::onAiSearchFinished(const reversi::SearchResult& result, int
     if (generation != searchGeneration_ || !result.completed) {
         return; // superseded by a new game/search, or this one was cancelled: discard
     }
+    aiSearchInFlight_ = false;
     commitMove(result.bestMove);
     advanceTurn();
+}
+
+void GameController::analyzePosition(int maxLines) {
+    if (!canAnalyze()) {
+        return; // an AI move-search or another analysis is already in flight
+    }
+    cancelAnalysis(); // defensive: keeps "at most one analysisThread_ alive" airtight
+    ++analysisGeneration_;
+    const int myGeneration = analysisGeneration_;
+    analysisInFlight_ = true;
+    analysisCancellation_ = std::make_shared<reversi::CancellationToken>();
+    const std::shared_ptr<reversi::CancellationToken> cancellationCopy = analysisCancellation_;
+    analysisTt_->clear(); // a fresh analysis of a (possibly different) position each time -
+                          // entries from the previous call's position tree don't carry over
+    const reversi::Position posCopy = pos_;
+    const bool blackToMoveCopy = blackToMove_; // so onAnalysisFinished can convert the (mover-
+                                               // relative) score to the panel's fixed White/Black
+                                               // display convention - see the header's doc comment
+
+    // analysisTt_ is captured raw: the worker only touches it while running, and every path that
+    // mutates or destroys it (cancelAnalysis, the destructor) joins the worker first - the exact
+    // same "join-before-mutate" discipline startAiSearch()'s own comment describes for tt_/
+    // solverTt_.
+    reversi::TranspositionTable* const tt = analysisTt_.get();
+    analysisThread_ =
+        std::thread([this, posCopy, myGeneration, cancellationCopy, maxLines, tt, blackToMoveCopy] {
+            const std::vector<reversi::RankedMove> lines = reversi::analyzeTopMoves(
+                posCopy, maxLines, kAiMaxSearchDepth, kAiTimeBudget,
+                reversi::evaluateDiscDifferential, cancellationCopy.get(), tt);
+            // The PV is only ever extracted for the top-ranked line - a chess-analysis-UI
+            // convention, and each additional line's PV would need its own walk from a different
+            // child position (see analysis.hpp's own doc comment on extractPrincipalVariation).
+            std::vector<int> pv;
+            if (!lines.empty()) {
+                pv = reversi::extractPrincipalVariation(posCopy, lines[0].move, *tt, kMaxPvLength);
+            }
+            QMetaObject::invokeMethod(
+                this,
+                [this, lines, pv, blackToMoveCopy, myGeneration] {
+                    onAnalysisFinished(lines, pv, blackToMoveCopy, myGeneration);
+                },
+                Qt::QueuedConnection);
+        });
+}
+
+void GameController::onAnalysisFinished(std::vector<reversi::RankedMove> lines, std::vector<int> pv,
+                                        bool blackToMove, int generation) {
+    if (generation != analysisGeneration_) {
+        // Superseded by a newer analysis or a position change: discard without touching
+        // analysisInFlight_, which may already correctly reflect a newer, still-running pass.
+        return;
+    }
+    analysisInFlight_ = false;
+    emit analysisFinished(lines, pv, blackToMove);
 }
 
 void GameController::emitBoardState() {
@@ -214,6 +296,7 @@ void GameController::undo() {
         return;
     }
     cancelAiSearch();
+    cancelAnalysis();
     do {
         --historyIndex_;
     } while (historyIndex_ > 0 && !isHumanTurnFor(history_[historyIndex_].blackToMove));
@@ -225,6 +308,7 @@ void GameController::redo() {
         return;
     }
     cancelAiSearch();
+    cancelAnalysis();
     do {
         ++historyIndex_;
     } while (historyIndex_ + 1 < history_.size() &&
@@ -283,6 +367,7 @@ GameController::replayMoves(const reversi::Position& start, bool startBlackToMov
 void GameController::applyLoadedHistory(GameMode mode, std::vector<HistoryEntry> history,
                                         bool lastMoveHighlightEnabled) {
     cancelAiSearch();
+    cancelAnalysis();
     tt_->clear(); // a different position tree than whatever was loaded before - see the header's
     solverTt_->clear(); // undo/redo-vs-load doc comment for why this differs from undo/redo.
     mode_ = mode;

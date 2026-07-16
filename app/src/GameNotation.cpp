@@ -62,7 +62,8 @@ std::optional<LoadedGame> fromSaveJson(const QJsonObject& json) {
     if (json.value(QStringLiteral("version")).toInt(-1) != 1) {
         return std::nullopt;
     }
-    const std::optional<GameMode> mode = modeFromString(json.value(QStringLiteral("mode")).toString());
+    const std::optional<GameMode> mode =
+        modeFromString(json.value(QStringLiteral("mode")).toString());
     if (!mode) {
         return std::nullopt;
     }
@@ -85,9 +86,9 @@ std::optional<LoadedGame> fromSaveJson(const QJsonObject& json) {
     }
 
     const bool lastMoveHighlightEnabled = json.value(QStringLiteral("settings"))
-                                               .toObject()
-                                               .value(QStringLiteral("lastMoveHighlightEnabled"))
-                                               .toBool(false);
+                                              .toObject()
+                                              .value(QStringLiteral("lastMoveHighlightEnabled"))
+                                              .toBool(false);
 
     LoadedGame result;
     result.mode = *mode;
@@ -157,9 +158,8 @@ std::optional<std::pair<reversi::Position, bool>> fromBoardString(const QString&
         return std::nullopt;
     }
 
-    const std::optional<reversi::Position> position =
-        reversi::Position::fromBoardString(board.left(reversi::kBoardSquares).toStdString(),
-                                           blackToMove);
+    const std::optional<reversi::Position> position = reversi::Position::fromBoardString(
+        board.left(reversi::kBoardSquares).toStdString(), blackToMove);
     if (!position) {
         return std::nullopt;
     }

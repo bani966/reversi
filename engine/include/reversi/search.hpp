@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <vector>
 
 namespace reversi {
 
@@ -114,6 +115,28 @@ SearchResult searchTimed(const Position& p, int maxDepth, const TimeBudget& budg
                          const EvalFn& eval = evaluateDiscDifferential,
                          const CancellationToken* cancellation = nullptr,
                          TranspositionTable* tt = nullptr, const MpcConfig* mpc = nullptr);
+
+// search()/searchTimed() with an extra constraint: any square in `excludedRootMoves` is skipped
+// entirely at the root - never explored, never compared, never returned as bestMove. NOT a
+// change to search()/searchWindow()/searchIterative()/searchTimed() themselves (their signatures
+// and behavior are unchanged); these are new sibling functions built for MultiPV analysis
+// (engine/include/reversi/analysis.hpp's analyzeTopMoves(), which calls
+// searchTimedExcludingMoves() once per ranked line, excluding every move already ranked). Same
+// contracts as search()/searchTimed() otherwise (result.completed, tt, cancellation, mpc all mean
+// exactly what they do there).
+// Precondition: same as search()/searchTimed() (hasLegalMove(p)), PLUS at least one legal move of
+// `p` is not present in `excludedRootMoves`.
+SearchResult searchExcludingMoves(const Position& p, int depth,
+                                  const std::vector<int>& excludedRootMoves,
+                                  const EvalFn& eval = evaluateDiscDifferential,
+                                  const CancellationToken* cancellation = nullptr,
+                                  TranspositionTable* tt = nullptr, const MpcConfig* mpc = nullptr);
+SearchResult searchTimedExcludingMoves(const Position& p, int maxDepth, const TimeBudget& budget,
+                                       const std::vector<int>& excludedRootMoves,
+                                       const EvalFn& eval = evaluateDiscDifferential,
+                                       const CancellationToken* cancellation = nullptr,
+                                       TranspositionTable* tt = nullptr,
+                                       const MpcConfig* mpc = nullptr);
 
 // Per-thread depth-start stagger for searchLazySmp() below: thread `i`'s iterative-deepening
 // loop starts at `1 + (i % kLazySmpJitterPeriod)` instead of always 1 (thread 0, the "main"

@@ -633,3 +633,76 @@ data features, analysis panel, settings panel, visual parity pass).
   get an editable address field, type the target *folder* only, confirm, then type just the
   filename in the File name field) is the robust pattern and is what the verification above
   actually used.
+
+### Phase 3: analysis panel (single-line eval/depth/nodes/PV + on-demand MultiPV)
+
+- Built: `engine/include/reversi/analysis.hpp`/`.cpp` (new module) - `analyzeTopMoves()` (ranks up
+  to N candidate moves) and `extractPrincipalVariation()` (walks a TT's stored best moves into a
+  real move sequence - no PV mechanism existed anywhere in the engine before this). Two new
+  additive sibling functions in `search.hpp`/`.cpp`, `searchExcludingMoves`/
+  `searchTimedExcludingMoves` - `windowedSearch`/`iterativeDriver` (internal) gained a defaulted
+  `excludedRootMoves` parameter that skips those squares entirely at the root; every existing
+  public function (`search`/`searchWindow`/`searchIterative`/`searchTimed`/`searchLazySmp`) is
+  byte-identical, unchanged. `GameController` gained a dedicated `analysisThread_`/`analysisTt_`/
+  `analysisCancellation_` (mirroring the AI-search worker's shape exactly, but never sharing the
+  live game's `tt_`/`solverTt_` - a plain `TranspositionTable` isn't safe for two threads at once)
+  and `canAnalyze()`/`analyzePosition()`/`cancelAnalysis()`. `MainWindow`'s `panel_` (empty since
+  phase 1) got its first real content: an "Analyze Position" button, status label, and a
+  monospace read-only results view.
+- Real bug caught by manual GUI testing, not by unit tests (worth recording in full): the first
+  working version time-budgeted every MultiPV pass independently via `searchTimedExcludingMoves`.
+  Manually clicking "Analyze Position" on the start position showed rank 1 (the supposed BEST
+  move) scoring *worse* than ranks 2 and 3 - an impossible ranking if all three were searched at
+  equal strength. Root cause: excluding moves shrinks the root's branching factor, so under a
+  wall-clock budget alone, a later (narrower) pass's iterative deepening reached depth 15 in the
+  same time pass 0's full branching factor only reached depth 14 in - and search scores at
+  different depths simply aren't comparable (the same "differing depths give differing scores,
+  that's not corruption" lesson M8's DEVLOG entry already recorded, but here it silently broke a
+  correctness-shaped guarantee - "rank 1 is the best line" - instead of just being an expected
+  variance). Fixed by making pass 0 the only time-budgeted call; every later pass is locked to
+  EXACTLY pass 0's own achieved depth via the fixed-depth `searchExcludingMoves`, guaranteeing
+  every ranked line is genuinely comparable. Added a dedicated regression test
+  (`AnalyzeTopMoves.AllRanksSearchToTheSameDepth`) that encodes this invariant directly, since the
+  existing "scores are non-increasing" test alone hadn't caught it (a quick fixed low depth in the
+  unit test never hit the asymmetric-branching-factor conditions that surfaced it live). The
+  `extractPrincipalVariation` doc comment separately documents a related but distinct pitfall: the
+  shared analysis TT's entry for the root position itself reflects whichever pass ran LAST (not
+  pass 0's real best move), so the PV walk deliberately seeds its first ply from pass 0's
+  already-known `bestMove` rather than probing the TT for the root position directly.
+- Second real bug caught by manual GUI testing: `startAiSearch()` set `aiSearchInFlight_ = true`
+  *after* its own `emit statusChanged(...)` call, and `MainWindow` only re-checked `canAnalyze()`
+  on `boardChanged`, not `statusChanged` - so the "Analyze Position" button stayed clickable for
+  the AI's entire thinking window instead of disabling immediately. Caught by clicking a move in
+  Human-vs-AI mode and screenshotting with minimal delay (deliberately racing the AI's own
+  sub-second response) to catch the transient "AI thinking..." state. Fixed by setting the flag
+  before the emit (a direct/same-thread Qt connection runs its slot synchronously inside `emit`,
+  so ordering here is load-bearing) and wiring `updateAnalyzeButtonEnabled()` into the existing
+  `statusChanged` connection too, not just `boardChanged`.
+- Third, smaller gap caught the same way: cancelling an in-flight analysis by starting a new game
+  mid-analysis correctly re-enabled the button (`cancelAnalysis()` resets `analysisInFlight_`) but
+  left the "Analyzing..." status label stuck, since cancellation never fires `analysisFinished`.
+  Fixed by having `updateAnalyzeButtonEnabled()` also reset the label to "Ready" whenever
+  `canAnalyze()` is true and the label still reads "Analyzing..." - covers every path that can
+  make analysis available again (completion, or any of the cancellation call sites) uniformly.
+- Mid-session correction, per explicit user feedback after seeing a first working version: scores
+  were originally shown mover-relative with a "positive = good for the side to move" caption.
+  Changed to a fixed chess.com-style convention instead - positive always favors White, negative
+  always favors Black, regardless of whose turn was analyzed - which needed `analysisFinished` to
+  carry the analyzed position's `blackToMove` alongside the ranked lines, since `RankedMove::score`
+  itself stays mover-relative (matching `SearchResult`'s own convention) and only the panel's
+  display layer converts.
+- Scope boundaries decided up front (confirmed with the user before implementation): AI-vs-AI game
+  mode stays deferred to phase 4 (zero scaffolding for it exists anywhere yet, and it reads as a
+  settings/mode-selection concern, not an analysis-display one); `analyzeTopMoves` never consults
+  the opening book or exact endgame solver, always ranking via heuristic search regardless of
+  `emptyCount()` - blending book/solver awareness into MultiPV ranking is a real future
+  enhancement, not attempted here. A full chess.com-style visual reskin (rounded cards, the exact
+  reference layout) stays phase 5's job; this phase's own visual cleanup (panel styling via
+  `chrome::palette()`, a monospace results font, compact node-count formatting like "10.1M" instead
+  of "10094917") was a light, contained pass, not a preview of phase 5.
+- Verified: 203/203 automated tests green (10 new: 4 `SearchExcludingMoves`/1
+  `SearchTimedExcludingMoves` engine tests, 5 `AnalyzeTopMoves`/`ExtractPrincipalVariation` tests
+  including the depth-equality regression test), plus the manual GUI pass above that actually
+  found the three real bugs this entry describes - a reminder that the automated suite and manual
+  verification catch genuinely different failure classes here, same as M8's Lazy SMP strength
+  investigation.

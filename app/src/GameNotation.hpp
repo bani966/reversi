@@ -28,8 +28,7 @@ struct LoadedGame {
 };
 
 // Save/load: this app's own JSON format ("reversi-save", versioned from the start).
-QJsonObject toSaveJson(GameMode mode, const std::vector<int>& moves,
-                       bool lastMoveHighlightEnabled);
+QJsonObject toSaveJson(GameMode mode, const std::vector<int>& moves, bool lastMoveHighlightEnabled);
 std::optional<LoadedGame> fromSaveJson(const QJsonObject& json);
 
 // Transcript: the standard Othello convention - concatenated lowercase two-character squares in

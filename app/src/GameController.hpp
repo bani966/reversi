@@ -3,6 +3,7 @@
 #include "BoardWidget.hpp"
 #include "GameMode.hpp"
 
+#include "reversi/analysis.hpp"
 #include "reversi/cancellation.hpp"
 #include "reversi/move_selector.hpp"
 #include "reversi/position.hpp"
@@ -70,12 +71,37 @@ public:
     bool importPosition(const QString& filePath);
     QString lastErrorMessage() const { return lastErrorMessage_; }
 
+    // M9 phase 3: on-demand MultiPV analysis of the CURRENT position - works in any GameMode,
+    // regardless of whose turn it is (a Human-vs-Human player must be able to inspect a position
+    // just as freely as a Human-vs-AI one). `false` while an AI move-search or an already-running
+    // analysis is in flight - the panel's "Analyze Position" button is disabled in that state, but
+    // analyzePosition() itself also no-ops defensively rather than trusting the caller.
+    bool canAnalyze() const { return !aiSearchInFlight_ && !analysisInFlight_; }
+    // 3 ranked lines by default - enough to show real alternatives without the on-demand wait
+    // growing past a few seconds at kAiTimeBudget's per-line cost (see GameController.cpp).
+    void analyzePosition(int maxLines = 3);
+    // Requests the in-flight analysis (if any) to stop and blocks until its worker thread has
+    // finished. Safe to call when no analysis is running. Called from every place cancelAiSearch()
+    // already is (newGame, the destructor, undo, redo, applyLoadedHistory) - any of those change
+    // pos_ out from under an in-flight analysis of the old position, the same invalidation
+    // reasoning cancelAiSearch() already applies to the AI's own search.
+    void cancelAnalysis();
+
 public slots:
     void onSquareClicked(int square);
 
 signals:
     void boardChanged(const BoardWidget::DisplayState& state);
     void statusChanged(const QString& text);
+    // `lines` is empty if analysis found nothing to report (e.g. cancelled immediately); `pv` is
+    // the principal variation for lines[0] only (empty if lines is empty) - see
+    // GameController.cpp's analyzePosition() for why only the top line gets a full continuation.
+    // `blackToMove` is whose turn it was in the analyzed position - every RankedMove::score is
+    // mover-relative (see analysis.hpp), so a fixed White-positive/Black-negative display (the
+    // panel's own convention, not the engine's) needs to know which side that was in order to
+    // convert.
+    void analysisFinished(const std::vector<reversi::RankedMove>& lines, const std::vector<int>& pv,
+                          bool blackToMove);
 
 private:
     // One entry per fully pass-resolved resting position - i.e. exactly what advanceTurn()
@@ -131,6 +157,23 @@ private:
     // superseded (by a new search or a new game) can be recognized as stale and discarded even
     // if it otherwise looks like a normal completed result.
     int searchGeneration_ = 0;
+    // True from startAiSearch() until onAiSearchFinished() runs (or cancelAiSearch() is called) -
+    // NOT the same thing as aiThread_.joinable(), which stays true from spawn until join() is
+    // actually called, including the window after the worker function has already returned but
+    // before its queued slot has run on the GUI thread. canAnalyze() needs the precise "is a
+    // result still pending" answer, not "has join() been called yet".
+    bool aiSearchInFlight_ = false;
+
+    // M9 phase 3: MultiPV analysis worker, mirroring aiThread_/cancellation_/searchGeneration_'s
+    // shape exactly, but kept fully separate - analysisTt_ is dedicated and NEVER shared with
+    // tt_/solverTt_ (a plain TranspositionTable, unlike M8's SharedTranspositionTable, is not
+    // safe for concurrent access from two threads at once; see analysis.hpp's own doc comment on
+    // why analyzeTopMoves() still safely reuses one table across its own N sequential passes).
+    std::thread analysisThread_;
+    std::unique_ptr<reversi::TranspositionTable> analysisTt_;
+    std::shared_ptr<reversi::CancellationToken> analysisCancellation_;
+    int analysisGeneration_ = 0;
+    bool analysisInFlight_ = false;
 
     bool isHumanTurn() const;
     bool isHumanTurnFor(bool blackToMove) const;
@@ -140,6 +183,8 @@ private:
 
     void startAiSearch();
     void onAiSearchFinished(const reversi::SearchResult& result, int generation);
+    void onAnalysisFinished(std::vector<reversi::RankedMove> lines, std::vector<int> pv,
+                            bool blackToMove, int generation);
 
     // Shared by onSquareClicked/onAiSearchFinished: applies a real move to pos_/blackToMove_/
     // lastMoveSquare_ and discards any redo tail. Does NOT touch history_ itself - advanceTurn()
