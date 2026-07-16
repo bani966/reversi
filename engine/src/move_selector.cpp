@@ -20,7 +20,9 @@ SearchResult selectMove(const Position& p, const EvalFn& eval, const MoveSelecto
     if (p.emptyCount() <= config.exactSolverEmptyThreshold) {
         return solveExact(p, cancellation, solverTt);
     }
-    return searchTimed(p, config.maxDepth, config.budget, eval, cancellation, searchTt);
+    const MpcConfig mpc{config.mpcModel, config.mpcT};
+    const MpcConfig* mpcArg = config.mpcModel != nullptr ? &mpc : nullptr;
+    return searchTimed(p, config.maxDepth, config.budget, eval, cancellation, searchTt, mpcArg);
 }
 
 } // namespace reversi

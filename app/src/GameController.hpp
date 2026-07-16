@@ -80,6 +80,9 @@ private:
     // lastMoveHighlightEnabled_'s "control point exists, default off" pattern. Non-owning: this
     // object never constructs or destroys an OpeningBook itself.
     const reversi::OpeningBook* book_ = nullptr;
+    // Off by default: no loading path exists yet to construct a real MpcModel (M7) - same
+    // structural "control point exists, default off" pattern as book_ above. Non-owning.
+    const reversi::MpcModel* mpcModel_ = nullptr;
     std::shared_ptr<reversi::CancellationToken> cancellation_;
     // Bumped on every new search and every cancellation, so a result that arrives after being
     // superseded (by a new search or a new game) can be recognized as stale and discarded even

@@ -16,7 +16,7 @@ namespace reversi {
 // for an opening-book check to plug in without becoming a THIRD independently-duplicated
 // decision on top of an already-duplicated one. selectMove() is that one place: book (if
 // present and it has a move) -> solveExact (if emptyCount() <= exactSolverEmptyThreshold) ->
-// searchTimed.
+// searchTimed (optionally with Multi-ProbCut enabled, M7 - see mpcModel below).
 struct MoveSelectorConfig {
     // nullptr disables the opening book entirely - this IS the "toggleable" flag from the
     // original feature spec: a boolean-shaped control point (present or absent), not a
@@ -29,6 +29,14 @@ struct MoveSelectorConfig {
     int exactSolverEmptyThreshold = kExactSolverEmptyThreshold;
     int maxDepth = 60;
     TimeBudget budget;
+    // nullptr disables Multi-ProbCut entirely (M7) - the same "control point exists, default
+    // off" pattern as `book` above. Only takes effect on the searchTimed() branch (MPC never
+    // applies to solveExact(), which has no eval/heuristic-search concept at all). See
+    // mpc.hpp's doc comment for the hard constraint this model's coefficients depend on: it
+    // must have been fit against exactly the `eval` passed to selectMove(), or its cut margins
+    // are silently miscalibrated.
+    const MpcModel* mpcModel = nullptr;
+    double mpcT = kDefaultMpcT;
 };
 
 // Precondition: hasLegalMove(p), same as search()/solveExact() - the caller applies any forced

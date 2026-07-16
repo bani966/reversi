@@ -112,8 +112,8 @@ void GameController::startAiSearch() {
 
     // tt_/solverTt_ are captured raw: the worker only touches them while running, and every
     // path that mutates or destroys them (newGame, destructor) joins the worker via
-    // cancelAiSearch first. book_ has no mutator yet (see GameController.hpp), so there is
-    // nothing to race on there either - a future loading path must preserve this same
+    // cancelAiSearch first. book_/mpcModel_ have no mutator yet (see GameController.hpp), so
+    // there is nothing to race on there either - a future loading path must preserve this same
     // join-before-mutate discipline.
     reversi::TranspositionTable* const tt = tt_.get();
     reversi::TranspositionTable* const solverTt = solverTt_.get();
@@ -121,6 +121,7 @@ void GameController::startAiSearch() {
     config.book = book_;
     config.maxDepth = kAiMaxSearchDepth;
     config.budget = kAiTimeBudget;
+    config.mpcModel = mpcModel_;
     aiThread_ = std::thread([this, posCopy, myGeneration, cancellationCopy, config, tt, solverTt] {
         const reversi::SearchResult result =
             reversi::selectMove(posCopy, reversi::evaluateDiscDifferential, config,

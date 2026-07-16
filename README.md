@@ -4,7 +4,8 @@ A Reversi/Othello desktop application: a bitboard engine in pure C++20 with alph
 search, a perfect-play endgame solver, a WTHOR-trained pattern evaluation with
 Multi-ProbCut, and a minimalist Qt 6 Widgets GUI with live engine analysis.
 
-**Status: M6 complete — WTHOR pattern evaluation and opening book both done.** Playable HvH/HvAI
+**Status: M7 complete — Multi-ProbCut added on top of M6's pattern eval and opening book.**
+Playable HvH/HvAI
 in the Qt GUI (M3), with the AI driven by iterative deepening + a transposition table + PVS +
 move ordering + aspiration windows on a wall-clock time budget (M4) — a measured, large
 self-play gain over M2's plain fixed-depth alpha-beta baseline (deterministic gate: depth-12
@@ -28,7 +29,15 @@ canonicalization is correct on real data, not just in unit tests. Also new in Ph
 that GUI gameplay now goes through — previously missing entirely (the GUI called the heuristic
 search directly, with no path to the exact solver at all). `tools/` (gitignored raw data,
 generated weights/books ship as release assets — never committed) holds the extraction,
-training, and book-building pipeline; see `tools/README.md`.
+training, and book-building pipeline; see `tools/README.md`. M7 adds Multi-ProbCut
+(`MpcModel`/`MpcConfig`, off by default, wired into `selectMove()`'s search branch): shallow-vs-
+deep search value pairs are fit (closed-form OLS, `tools/mpc_fitter`) into per-depth-pair
+coefficients, and `search()`'s internal nodes cut when a shallow probe's predicted deep value
+clears the current alpha-beta window by a confidence margin. Real equal-time self-play
+validation on a fitted model (1,500 self-played positions) found a genuinely-negative first
+configuration (too many eligible nodes paying for shallow-probe overhead relative to actual
+cuts taken) before landing on one with a measured, if modest, edge (11–9 in a 20-game equal-time
+match) — both the finding and the fix are recorded in `DEVLOG.md`.
 
 ## Layout
 
@@ -73,7 +82,7 @@ ctest --preset ci-linux
 | M4 (done) | Search maturity | Iterative deepening, TT, PVS, ordering, time control; large self-play gain vs M2 |
 | M5 (done) | Endgame solver | FFO test positions solved with correct exact scores |
 | M6 (done) | Pattern eval + opening book | WTHOR-trained eval beats hand eval at equal depth; full-DB replay passes |
-| M7 | Multi-ProbCut | Measured equal-time strength gain; toggle off by default |
+| M7 (done) | Multi-ProbCut | Measured equal-time strength gain; toggle off by default |
 | M8 | Lazy SMP | ≥3× nps on 8 threads; TSan clean; no strength regression at equal time |
 | M9 | Feature complete | Undo/redo, save/load, import/export, settings, AI vs AI, analysis panel |
 | M10 | Release | Animations, sound, themes, installers, v1.0 |

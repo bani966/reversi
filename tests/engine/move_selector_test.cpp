@@ -3,6 +3,7 @@
 #include "../support/endgame_positions.hpp"
 #include "reversi/eval.hpp"
 #include "reversi/moves.hpp"
+#include "reversi/mpc.hpp"
 #include "reversi/opening_book.hpp"
 #include "reversi/pattern.hpp"
 #include "reversi/solver.hpp"
@@ -154,6 +155,73 @@ TEST(SelectMove, SearchTtAndSolverTtAreUsedIndependently) {
         EXPECT_EQ(solverTt.probe(rootHash), nullptr)
             << "solverTt must stay untouched by the search";
     }
+}
+
+// mpcModel must reach the searchTimed branch: a synthetic "always cuts" model measurably
+// changes the node count relative to the identical config with mpcModel left at its default
+// nullptr, forcing the search branch on both sides (a position well above
+// exactSolverEmptyThreshold) so the only difference between the two calls is whether MPC is
+// threaded through at all. The assertion is direction-agnostic (NE, not LT) deliberately: at
+// this shallow a depth, an MPC cut inside a PVS zero-window probe returns a value sitting
+// exactly on the window boundary, which can itself trigger PVS's own "the probe suggested an
+// improvement, re-search with the full window" branch (search.cpp) - a real, legitimate
+// interaction between two independent techniques, not a bug, but it means node count isn't
+// guaranteed to strictly decrease at every depth/window combination. mpc_search_test.cpp
+// already proves the strict, large-scale node reduction at a realistic fixed depth (7); this
+// test's only job is confirming the wiring, not re-proving that.
+//
+// A SINGLE pair (deep=1, shallow=0) is used deliberately, not a densely-chained range: MPC's
+// own shallow probes always use a FULL (-inf, +inf) window internally (matching how training
+// data is generated - see search.cpp), so a probe can never cut ITSELF unless its shallow
+// depth is 0 (which returns eval() directly, bypassing the MPC check entirely - see negamax's
+// depth==0 early return). Chaining multiple covered depths together (deep -> shallow also
+// covered -> shallower still covered...) makes each probe's own full-window sub-probe fall
+// through to real exploration instead of cutting, adding MORE total work than no MPC at all -
+// a real, surprising finding hit while writing this test, not merely a hypothetical: an
+// earlier version of this test covered depths 1..6 with reduction 1 and observed MORE nodes
+// WITH the "always cuts" model than without (2708 vs 1349) for exactly this reason. A single
+// shallow=0 pair sidesteps that specific issue, though not the PVS-re-search interaction above.
+TEST(SelectMove, MpcModelIsThreadedThroughToTheSearchBranch) {
+    const Position pos = Position::start();
+
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "move_selector_test_mpc_always.bin";
+    {
+        std::ofstream out(path, std::ios::binary);
+        const auto writeU32 = [&out](std::uint32_t v) {
+            const std::array<char, 4> bytes = {
+                static_cast<char>(v & 0xFFU), static_cast<char>((v >> 8U) & 0xFFU),
+                static_cast<char>((v >> 16U) & 0xFFU), static_cast<char>((v >> 24U) & 0xFFU)};
+            out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        };
+        const auto writeI32 = [&](int v) { writeU32(static_cast<std::uint32_t>(v)); };
+        const auto writeF32 = [&](float v) { writeU32(std::bit_cast<std::uint32_t>(v)); };
+        writeU32(1);       // pairCount
+        writeI32(1);       // deepDepth
+        writeI32(0);       // shallowDepth
+        writeF32(1000.0F); // a
+        writeF32(0.0F);    // b
+        writeF32(0.001F);  // sigma
+    }
+    const MpcModel model(path);
+
+    MoveSelectorConfig withoutMpc;
+    withoutMpc.exactSolverEmptyThreshold = 0; // forces the search branch
+    withoutMpc.maxDepth = 2; // depth-2 iteration's ply-1 nodes have remaining depth 1 - covered
+    withoutMpc.budget =
+        TimeBudget{std::chrono::milliseconds{2000}, std::chrono::milliseconds{5000}};
+    const SearchResult without = selectMove(pos, evaluateDiscDifferential, withoutMpc);
+
+    MoveSelectorConfig withMpc = withoutMpc;
+    withMpc.mpcModel = &model;
+    withMpc.mpcT = 2.0;
+    const SearchResult with = selectMove(pos, evaluateDiscDifferential, withMpc);
+
+    EXPECT_TRUE(without.completed);
+    EXPECT_TRUE(with.completed);
+    EXPECT_NE(with.nodes, without.nodes);
+
+    std::filesystem::remove(path);
 }
 
 } // namespace

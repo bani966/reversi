@@ -121,6 +121,39 @@ guide later, not the guide itself.
   reduction=2's broader coverage AND improve the edge size - explicitly out of scope for this
   milestone's time-box (a real engineering addition, not a config/t change).
 
+### Step 6: MoveSelectorConfig/GameController wiring
+
+- Built: `mpcModel`/`mpcT` added to `MoveSelectorConfig`, threaded into `selectMove()`'s
+  `searchTimed` branch only (never `solveExact`, which has no eval/heuristic concept at all).
+  `GameController` gains `mpcModel_`, defaulted `nullptr` - same "control point exists, default
+  off, no settings UI yet" pattern as `book_`. No behavior change today.
+- Interesting bug caught while writing the plumbing test (not in production code - in the TEST's
+  own synthetic model construction): a densely-chained "always cuts" model (every depth 1..6,
+  reduction 1) produced MORE nodes with MPC than without (2708 vs 1349) at the selectMove level.
+  Root cause: MPC's shallow probes always use a FULL (-inf, +inf) window internally (matching
+  how training data is generated), so a probe can never cut ITSELF unless its own shallow depth
+  is 0 - chaining covered depths together (deep -> shallow also covered -> shallower still
+  covered...) means every probe in the chain falls through to real exploration instead of
+  cutting, adding pure overhead. Fixed by using a single (deep=1, shallow=0) pair instead - the
+  shallow=0 case bypasses the MPC check entirely via negamax's own depth==0 early return, so
+  there's no chain to go wrong. This is the same "shallow probe overhead" lesson from step 5,
+  now understood at a mechanistic level rather than just an empirical one.
+- Second interesting interaction found in the same test: even with the chain issue fixed, node
+  count didn't reliably DECREASE with MPC at very shallow depths - it just reliably CHANGED. An
+  MPC cut inside a PVS zero-window probe returns a value sitting exactly on the window boundary,
+  which can itself trigger PVS's own "the probe suggested an improvement, re-search with the
+  full window" logic (search.cpp) - two independent, individually-correct techniques interacting
+  in a way that isn't obviously free at shallow depth. The final plumbing test asserts node
+  counts DIFFER (direction-agnostic), not that they decrease - mpc_search_test.cpp's fixed-depth
+  test already proves the real, large-scale reduction at a realistic depth (7); this test's only
+  job was confirming the wiring reaches search.cpp at all.
+- Verified: full rebuild, full ctest (100% pass), manual GUI smoke check (human plays d3 as
+  Black, AI replies legally with c3 as White) - no regression, MPC stays off by default exactly
+  as designed.
+
+M7 complete: Multi-ProbCut implemented, validated (including one real negative finding and its
+fix), a conservative default t shipped with honest real numbers, and wired in off by default.
+
 ## M0 — Scaffolding, CI
 
 - Built: repo layout (engine/cli/app/tests/tools), CMake presets, CI on Windows/macOS/Linux.
