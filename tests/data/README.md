@@ -29,3 +29,15 @@
   ```
   build/msvc/tools/wthor_extractor/Release/wthor-extractor.exe synth-book 200 2027 20 5 tests/data/dev_opening_book.bin
   ```
+- `dev_mpc_model.bin` — the equivalent small dev/test fixture for Multi-ProbCut (M7). Unlike
+  the two fixtures above, MPC needs no real game data of any kind to begin with (it's fit from
+  self-play search-value statistics, not real tournament outcomes) - this file's smallness is
+  purely about keeping the routine test suite fast, not sidestepping a data-licensing question.
+  Exists only to exercise `MpcModel`'s loading/lookup mechanism (`tests/engine/mpc_test.cpp`) -
+  fit from only 20 self-played games, it has no real tuning value and must never be used as
+  evidence of what a well-chosen `t`/model actually buys in strength (that's M7 step 5's job,
+  using a larger self-play sample). Reproducible exactly via:
+  ```
+  build/msvc/tools/mpc_fitter/Release/mpc-fitter.exe generate 20 2027 2 6 dataset.txt
+  build/msvc/tools/mpc_fitter/Release/mpc-fitter.exe fit dataset.txt 2 4 6 tests/data/dev_mpc_model.bin
+  ```

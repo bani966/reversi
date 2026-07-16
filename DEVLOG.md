@@ -44,6 +44,24 @@ guide later, not the guide itself.
   (shallower search should predict deeper search fairly well, deep search isn't literally
   identical to shallow so sigma isn't ~0) before trusting the mechanism for the real step-5 run.
 
+### Step 3: engine/mpc.hpp MpcModel reader
+
+- Built: `MpcModel` (mirrors `PatternEvaluator`/`OpeningBook`'s shape - load a file at
+  construction, expose a lookup method), `MpcConfig` (the `model == nullptr` toggle, matching
+  the same null-pointer-disables-it pattern used everywhere else in this codebase). Linear scan
+  for `lookup()`, not binary search - deliberately, since a real model holds maybe 5-7 pairs,
+  not the thousands `OpeningBook` needs to binary-search efficiently.
+- Interesting decision (a new documented hard constraint, same risk class as M6's eval/
+  terminalScore commensurability rule): a fitted `MpcModel`'s coefficients are only valid for
+  the exact eval function its training data was generated with
+  (`evaluateDiscDifferential` today) - using it with any other eval without regenerating data
+  and refitting would silently miscalibrate the cut margins. Documented in `mpc.hpp`'s doc
+  comment now; CLAUDE.md gets the same note once the whole milestone lands.
+- Small dev/test fixture (`tests/data/dev_mpc_model.bin`) generated from only 20 self-played
+  games - unlike M6's dev fixtures, this one isn't sidestepping a data-licensing question (MPC
+  needs no real game data of any kind to begin with), it's purely about keeping the routine
+  test suite fast.
+
 ## M0 — Scaffolding, CI
 
 - Built: repo layout (engine/cli/app/tests/tools), CMake presets, CI on Windows/macOS/Linux.
