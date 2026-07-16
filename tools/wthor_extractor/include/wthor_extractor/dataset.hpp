@@ -15,7 +15,8 @@ namespace wthor {
 void writeDatasetHeader(std::ostream& out);
 
 // Writes one sparse dataset line for a single sampled position:
-//   <target score, mover-relative> <emptySquareCount> <shapeId:canonicalIndex> <shapeId:canonicalIndex> ...
+//   <target score, mover-relative> <emptySquareCount> <shapeId:canonicalIndex>
+//   <shapeId:canonicalIndex> ...
 // Target score is computed via moverRelativeFinalScore from the position's own mover color and
 // the game's true replayed final disc counts - never a second, independent read of the file's
 // own reported score field (see moverRelativeFinalScore's doc comment for why). Empty-square

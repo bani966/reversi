@@ -1,0 +1,11 @@
+# Python dependencies for tools/train_pattern_eval.py (M6's ridge-regression pattern-eval
+# trainer). Not needed to build or run the shipped app/engine/cli - only for regenerating
+# trained weights from WTHOR data, an occasional development-time activity.
+#
+# Setup:
+#   python -m venv tools/.venv
+#   tools/.venv/Scripts/pip install -r tools/requirements.txt   (Windows)
+#   tools/.venv/bin/pip install -r tools/requirements.txt       (Linux/macOS)
+numpy>=2.0
+scipy>=1.14
+scikit-learn>=1.5
