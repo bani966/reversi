@@ -22,6 +22,12 @@ time; do not start features from later milestones without being asked.
   the actual final result — a table shared between the two would let the solver trust a
   heuristic-search entry as if it were exact, silently corrupting an otherwise-perfect solve.
   Give each mode its own table. (Full reasoning in `solver.hpp`'s doc comment on `tt`.)
+- Any trained `EvalFn` (e.g. `PatternEvaluator`, `engine/include/reversi/pattern_eval.hpp`)
+  must predict a position's final disc differential from the mover's perspective — exactly
+  `terminalScore()`'s scale and meaning. `search.cpp`'s `negamax` returns `terminalScore()` for
+  a mid-tree game-over leaf into the *same* alpha-beta/TT comparisons as every other node's
+  `eval()` call; a differently-scaled eval there would silently break both. (Full reasoning in
+  `pattern_eval.hpp`'s doc comment.)
 
 ## Build & test (local Windows, MSVC)
 
@@ -38,6 +44,41 @@ Do NOT switch local presets to Ninja: this shell has no MSVC environment (vcvars
 the VS generator works from any shell because MSBuild locates the toolchain itself.
 
 On Linux/macOS (engine + CLI + tests, no GUI): use the `ci-linux` / `ci-macos` presets.
+
+## WTHOR pipeline (`tools/`)
+
+Opt-in, not part of the routine build: `cmake --preset dev -DREVERSI_BUILD_TOOLS=ON` (default
+`OFF`; routine `ctest --preset dev` is identical either way — verified after every step that
+added to this pipeline). Two pieces, deliberately different languages for different concerns:
+
+- **`tools/wthor_extractor/`** (C++, links `reversi::engine` — same layering rule as `cli/`):
+  parses `.wtb` files and replays their moves through the real engine, so there is exactly one
+  implementation of game rules, not a second one in Python that could drift from the first (the
+  exact risk class that caused M5's FFO score-sign bug). Subcommands: `verify <file.wtb>` (parse
+  + replay, report illegal moves — the rules-engine stress test), `extract <file.wtb>
+  <out.txt>` (also writes the sparse training dataset), `synth-dataset <games> <seed> <out.txt>`
+  (generates a dataset from fixed-seed engine self-play instead of real WTHOR data — used for
+  the committed dev/test fixture, see below). `.wtb` byte layout is documented in
+  `tools/wthor_extractor/include/wthor_extractor/parser.hpp`; the dataset's sparse text format
+  (self-describing `%`-header + `<score> <emptyCount> <shapeId:index>...` lines) is documented
+  in `dataset.hpp`.
+- **`tools/train_pattern_eval.py`** (Python venv at `tools/.venv/`, deps in
+  `tools/requirements.txt`): reads one or more dataset files, fits ridge regression per
+  game-phase bucket, writes a dependency-free binary weight file (format documented in the
+  script's own docstring — plain `struct`-packed floats on the Python side, plain
+  `std::ifstream` byte reads on the C++ side, no serialization library needed on either end).
+
+**Pattern geometry (which squares make up each of the 12 pattern classes — lines, diagonals,
+edge+2X, corner blocks) lives once, in `engine/include/reversi/pattern.hpp`**, and both the C++
+extractor and the production `PatternEvaluator` call it — never redefine pattern shapes
+anywhere else.
+
+**Data**: the raw WTHOR database is never committed (no confirmed redistribution license from
+the FFO). Real trained weights are likewise never committed — they ship as release assets.
+`tests/data/dev_pattern_weights.bin` is the one exception: a small weight file trained purely
+on synthetic self-play (`synth-dataset`, not real WTHOR data) so the loading/lookup mechanism
+has a fast, routine, always-on test — it has no real playing strength and must never be treated
+as evidence of the real eval's quality (see `tests/data/README.md`).
 
 ## Testing policy
 
@@ -56,7 +97,9 @@ On Linux/macOS (engine + CLI + tests, no GUI): use the `ci-linux` / `ci-macos` p
 
 ## Don'ts
 
-- Don't add third-party dependencies without asking (GoogleTest via FetchContent is the
-  only one so far; Qt comes from the system).
+- Don't add third-party dependencies without asking. So far: GoogleTest via FetchContent
+  (C++, both `tests/` and `tools/wthor_extractor/`), Qt (comes from the system), and
+  numpy/scipy/scikit-learn (Python, `tools/requirements.txt` — dev-time only, never linked
+  into the shipped app/engine/cli).
 - Don't edit `.github/workflows/` casually — green CI on all jobs is a merge requirement.
 - Don't commit `CMakeUserPresets.json`, `build/`, or generated artifacts.
