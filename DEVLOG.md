@@ -357,4 +357,44 @@ fix), a conservative default t shipped with honest real numbers, and wired in of
   test - it raises confidence but cannot prove the absence of races. Ran it 5 additional times
   locally for extra confidence; the actual authority is the new `tsan` CI job, verified by
   pushing (the one piece of this step's verification that can't be done on this Windows
-  dev machine at all - no local GCC/Clang/TSan toolchain).
+  dev machine at all - no local GCC/Clang/TSan toolchain). CI confirmed green, including the
+  new `tsan` job, on the actual push.
+
+### Step 2: TtView adapter + searchLazySmp + Threads::Threads linkage
+
+- Built: an internal `TtView` (type-erased, two raw function pointers + a `void*`, no
+  `std::function`) so `negamax`/`windowedSearch`/`iterativeDriver` stay agnostic to which table
+  type they're talking to, without templating `search.cpp` or changing either table class's own
+  public API. The four existing public functions (`search`/`searchWindow`/`searchIterative`/
+  `searchTimed`) keep their exact pre-M8 signatures - each just builds a `TtView` from its
+  `TranspositionTable*` argument internally before calling into the (now `TtView`-based) shared
+  internals. `iterativeDriver` gained a `startDepth = 1` trailing parameter (default preserves
+  every pre-M8 call site) so Lazy SMP's per-thread jitter reuses the exact same iterative-
+  deepening loop, not a second copy of it. New `searchLazySmp()`: `threadCount <= 1` runs
+  inline on the calling thread (no `std::thread` spawned at all); `threadCount > 1` spawns all
+  `threadCount` threads (including thread 0), each with its own `SearchContext` (own killers/
+  history/nodes - cheap, no value in sharing) but the same `TtView` over one shared table,
+  joins them, and returns thread 0's own result with `.nodes` overwritten to the sum across all
+  threads (needed for nps-scaling measurement, step 4).
+- Interesting bug caught mid-implementation (not in review - while writing the `startDepth`
+  change itself): `iterativeDriver`'s soft-deadline check used a hardcoded `depth > 1` to mean
+  "always let the first iteration start, regardless of the soft budget." With a jittered start
+  depth, `depth > 1` no longer identifies "the first iteration for this thread" - a helper
+  thread starting at depth 4 would have its very first iteration skipped if the soft deadline
+  happened to already be past by the time it started. Fixed to `depth > startDepth`, which
+  degrades to the exact original behavior when `startDepth == 1` (every pre-M8 call site).
+- The whole `TtView` refactor - a real, if mechanical, change to already-tested `negamax`/
+  `windowedSearch`/`iterativeDriver` internals - compiled clean on the first attempt and the
+  FULL pre-existing test suite (171 tests) passed unmodified immediately after, with zero test
+  file edits needed anywhere. This is the concrete confirmation of this milestone's core design
+  claim (point 3 of the plan): routing single-threaded callers through one extra layer of
+  indirection that resolves to the exact same `TranspositionTable::probe()`/`store()` calls
+  changes nothing observable.
+- New tests (`search_lazy_smp_test.cpp`): score-at-fixed-depth exactly matches plain `search()`
+  across the benchmark set (the "TT never changes the score" argument extended to the
+  concurrent case, using a generous time budget so the comparison isn't muddied by wall-clock
+  timing), the same for `threadCount == 1` specifically, a repeatability/no-crash check across
+  thread counts {2, 4, 8} under a real short time budget, and a check that `.nodes` really is
+  the sum across all threads (not just thread 0's) - all green, plus a manual GUI smoke check
+  confirming `app/`'s build/link still works with `engine/` now depending on `Threads::Threads`
+  directly.

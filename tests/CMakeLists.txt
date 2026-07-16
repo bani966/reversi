@@ -20,6 +20,7 @@ add_executable(engine_tests
     engine/search_iterative_test.cpp
     engine/tt_test.cpp
     engine/shared_tt_test.cpp
+    engine/search_lazy_smp_test.cpp
     engine/ordering_test.cpp
     engine/aspiration_test.cpp
     engine/exit_criterion_m4_test.cpp

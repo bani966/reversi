@@ -7,6 +7,8 @@
 #include <bit>
 #include <chrono>
 #include <optional>
+#include <thread>
+#include <vector>
 
 namespace reversi {
 
@@ -55,12 +57,62 @@ constexpr std::array<int, kBoardSquares> kStaticOrderBias = [] {
 // deadline overshoot stays in the sub-millisecond range at realistic search speeds.
 constexpr int kDeadlineCheckInterval = 2048;
 
+// A minimal, allocation-free, type-erased view over "however this search's transposition table
+// works" - lets negamax/windowedSearch/iterativeDriver stay completely agnostic to whether
+// they're talking to a private single-threaded TranspositionTable or the concurrent-safe
+// SharedTranspositionTable (M8's Lazy SMP, searchLazySmp() below), without templating this file
+// or changing either table class's own public API. Two raw function pointers + a type-erased
+// void* instead of std::function: this is consulted on every internal node, so avoiding
+// std::function's indirection/allocation risk here is worth the small, contained manual type
+// erasure. `table == nullptr` means "TT disabled entirely", the same meaning
+// `TranspositionTable* tt == nullptr` already had everywhere in this file before M8.
+struct TtView {
+    void* table = nullptr;
+    std::optional<TTEntry> (*probe)(void* table, std::uint64_t key) = nullptr;
+    void (*store)(void* table, std::uint64_t key, int depth, int score, Bound bound,
+                  int bestMove) = nullptr;
+};
+
+TtView makeTtView(TranspositionTable* table) {
+    if (table == nullptr) {
+        return TtView{};
+    }
+    return TtView{
+        table,
+        [](void* t, std::uint64_t key) -> std::optional<TTEntry> {
+            const TTEntry* entry = static_cast<TranspositionTable*>(t)->probe(key);
+            return entry != nullptr ? std::optional<TTEntry>(*entry) : std::nullopt;
+        },
+        [](void* t, std::uint64_t key, int depth, int score, Bound bound, int bestMove) {
+            static_cast<TranspositionTable*>(t)->store(key, depth, score, bound, bestMove);
+        },
+    };
+}
+
+TtView makeTtView(SharedTranspositionTable* table) {
+    if (table == nullptr) {
+        return TtView{};
+    }
+    return TtView{
+        table,
+        [](void* t, std::uint64_t key) {
+            return static_cast<SharedTranspositionTable*>(t)->probe(key);
+        },
+        [](void* t, std::uint64_t key, int depth, int score, Bound bound, int bestMove) {
+            static_cast<SharedTranspositionTable*>(t)->store(key, depth, score, bound, bestMove);
+        },
+    };
+}
+
 // Per-search state threaded through the recursion. Killers/history are fresh per search()
 // call (they describe *this* search's tree, unlike the TT, which is designed to outlive it).
+// Lazy SMP (M8): each thread gets its OWN SearchContext (own killers/history/nodes - cheap,
+// thread-local ordering hints with no value in sharing) but all threads' `tt` views point at
+// the SAME underlying shared table - only the TT itself is the shared, valuable knowledge.
 struct SearchContext {
     const EvalFn& eval;
     const CancellationToken* cancellation;
-    TranspositionTable* tt;
+    TtView tt;
     const Clock::time_point* hardDeadline; // may be null: no time limit
     const MpcConfig* mpc;                  // may be null: Multi-ProbCut disabled
     std::uint64_t nodes = 0;
@@ -70,9 +122,8 @@ struct SearchContext {
     std::array<int, kBoardSquares> history{};
 };
 
-SearchContext makeContext(const EvalFn& eval, const CancellationToken* cancellation,
-                          TranspositionTable* tt, const Clock::time_point* hardDeadline,
-                          const MpcConfig* mpc) {
+SearchContext makeContext(const EvalFn& eval, const CancellationToken* cancellation, TtView tt,
+                          const Clock::time_point* hardDeadline, const MpcConfig* mpc) {
     SearchContext ctx{eval, cancellation, tt, hardDeadline, mpc};
     for (auto& plyKillers : ctx.killers) {
         plyKillers = {-1, -1};
@@ -169,10 +220,11 @@ int negamax(const Position& pos, int depth, int ply, int alpha, int beta, Search
         return ctx.eval(pos);
     }
 
-    const std::uint64_t hash = ctx.tt != nullptr ? zobristHash(pos) : 0;
+    const std::uint64_t hash = ctx.tt.table != nullptr ? zobristHash(pos) : 0;
     int ttMove = -1;
-    if (ctx.tt != nullptr) {
-        if (const TTEntry* entry = ctx.tt->probe(hash); entry != nullptr) {
+    if (ctx.tt.table != nullptr) {
+        if (const std::optional<TTEntry> entry = ctx.tt.probe(ctx.tt.table, hash);
+            entry.has_value()) {
             // The stored move is a useful ordering hint at ANY stored depth; the stored score
             // is only trusted at sufficient depth, and strictly per its bound type. (Within
             // one fixed-depth search the depth comparison is always an equality - remaining
@@ -256,13 +308,13 @@ int negamax(const Position& pos, int depth, int ply, int alpha, int beta, Search
         }
     }
 
-    if (ctx.tt != nullptr && !stopRequested(ctx)) {
+    if (ctx.tt.table != nullptr && !stopRequested(ctx)) {
         // The cancellation re-check matters: a stop request mid-loop makes `best` reflect
         // collapsed subtrees, and storing that would poison the table for later searches.
         const Bound bound = best <= alphaOriginal ? Bound::Upper
                             : best >= beta        ? Bound::Lower
                                                   : Bound::Exact;
-        ctx.tt->store(hash, depth, best, bound, bestSquare);
+        ctx.tt.store(ctx.tt.table, hash, depth, best, bound, bestSquare);
     }
     return best;
 }
@@ -270,13 +322,13 @@ int negamax(const Position& pos, int depth, int ply, int alpha, int beta, Search
 // Root search over an explicit (alphaInit, betaInit) window; see searchWindow's contract in
 // search.hpp for what a failed window means for the returned score/bestMove.
 SearchResult windowedSearch(const Position& p, int depth, int alphaInit, int betaInit,
-                            const EvalFn& eval, const CancellationToken* cancellation,
-                            TranspositionTable* tt, const Clock::time_point* hardDeadline,
-                            const MpcConfig* mpc) {
+                            const EvalFn& eval, const CancellationToken* cancellation, TtView tt,
+                            const Clock::time_point* hardDeadline, const MpcConfig* mpc) {
     SearchContext ctx = makeContext(eval, cancellation, tt, hardDeadline, mpc);
     int ttMove = -1;
-    if (tt != nullptr) {
-        if (const TTEntry* entry = tt->probe(zobristHash(p)); entry != nullptr) {
+    if (tt.table != nullptr) {
+        if (const std::optional<TTEntry> entry = tt.probe(tt.table, zobristHash(p));
+            entry.has_value()) {
             // Seeds root ordering from the previous iterative-deepening iteration's answer.
             // Only the move hint is used at the root: the root must always search fully.
             ttMove = entry->bestMove;
@@ -312,7 +364,7 @@ SearchResult windowedSearch(const Position& p, int depth, int alphaInit, int bet
     result.nodes = ctx.nodes;
     result.completed = !ctx.timedOut && (cancellation == nullptr || !cancellation->stopRequested());
     result.depth = result.completed ? depth : 0;
-    if (tt != nullptr && result.completed) {
+    if (tt.table != nullptr && result.completed) {
         // Tagged with the bound the window actually proved - storing a failed aspiration
         // window's score as Exact is precisely the "stale bound trusted incorrectly" bug
         // class this milestone's plan warns about. (With the full window this is always
@@ -322,7 +374,7 @@ SearchResult windowedSearch(const Position& p, int depth, int alphaInit, int bet
         const Bound bound = result.score <= alphaInit ? Bound::Upper
                             : result.score >= beta    ? Bound::Lower
                                                       : Bound::Exact;
-        tt->store(zobristHash(p), depth, result.score, bound, result.bestMove);
+        tt.store(tt.table, zobristHash(p), depth, result.score, bound, result.bestMove);
     }
     return result;
 }
@@ -334,15 +386,23 @@ SearchResult windowedSearch(const Position& p, int depth, int alphaInit, int bet
 // benchmark set's depth-6 iterative runs alone when this landed.
 constexpr int kAspirationDelta = 8;
 
+// `startDepth` (M8): defaults to 1, preserving every pre-M8 call site exactly. Lazy SMP's
+// helper threads pass a per-thread-jittered value instead (see searchLazySmp below) - this is
+// the SAME driver reused for both single-threaded and multi-threaded searches, not a second
+// copy of the iterative-deepening logic.
 SearchResult iterativeDriver(const Position& p, int maxDepth, const EvalFn& eval,
-                             const CancellationToken* cancellation, TranspositionTable* tt,
+                             const CancellationToken* cancellation, TtView tt,
                              const Clock::time_point* softDeadline,
-                             const Clock::time_point* hardDeadline, const MpcConfig* mpc) {
+                             const Clock::time_point* hardDeadline, const MpcConfig* mpc,
+                             int startDepth = 1) {
     SearchResult deepest;
     deepest.completed = false; // stays false unless some iteration actually finishes
     std::uint64_t totalNodes = 0;
-    for (int depth = 1; depth <= maxDepth; ++depth) {
-        if (depth > 1 && softDeadline != nullptr && Clock::now() >= *softDeadline) {
+    for (int depth = startDepth; depth <= maxDepth; ++depth) {
+        // depth > startDepth (not depth > 1): the first iteration for THIS loop must always be
+        // allowed to start regardless of the soft deadline, exactly as before M8 - only now
+        // "the first iteration" can be any depth, per a jittered startDepth.
+        if (depth > startDepth && softDeadline != nullptr && Clock::now() >= *softDeadline) {
             break; // soft budget spent: don't start another iteration
         }
         SearchResult iteration;
@@ -382,19 +442,20 @@ SearchResult iterativeDriver(const Position& p, int maxDepth, const EvalFn& eval
 SearchResult search(const Position& p, int depth, const EvalFn& eval,
                     const CancellationToken* cancellation, TranspositionTable* tt,
                     const MpcConfig* mpc) {
-    return windowedSearch(p, depth, -kInfinity, kInfinity, eval, cancellation, tt, nullptr, mpc);
+    return windowedSearch(p, depth, -kInfinity, kInfinity, eval, cancellation, makeTtView(tt),
+                          nullptr, mpc);
 }
 
 SearchResult searchWindow(const Position& p, int depth, int alpha, int beta, const EvalFn& eval,
                           const CancellationToken* cancellation, TranspositionTable* tt,
                           const MpcConfig* mpc) {
-    return windowedSearch(p, depth, alpha, beta, eval, cancellation, tt, nullptr, mpc);
+    return windowedSearch(p, depth, alpha, beta, eval, cancellation, makeTtView(tt), nullptr, mpc);
 }
 
 SearchResult searchIterative(const Position& p, int maxDepth, const EvalFn& eval,
                              const CancellationToken* cancellation, TranspositionTable* tt,
                              const MpcConfig* mpc) {
-    return iterativeDriver(p, maxDepth, eval, cancellation, tt, nullptr, nullptr, mpc);
+    return iterativeDriver(p, maxDepth, eval, cancellation, makeTtView(tt), nullptr, nullptr, mpc);
 }
 
 SearchResult searchTimed(const Position& p, int maxDepth, const TimeBudget& budget,
@@ -403,7 +464,57 @@ SearchResult searchTimed(const Position& p, int maxDepth, const TimeBudget& budg
     const Clock::time_point start = Clock::now();
     const Clock::time_point softDeadline = start + budget.soft;
     const Clock::time_point hardDeadline = start + budget.hard;
-    return iterativeDriver(p, maxDepth, eval, cancellation, tt, &softDeadline, &hardDeadline, mpc);
+    return iterativeDriver(p, maxDepth, eval, cancellation, makeTtView(tt), &softDeadline,
+                           &hardDeadline, mpc);
+}
+
+namespace {
+
+int jitteredStartDepth(int threadIndex) {
+    if (threadIndex == 0) {
+        return 1; // thread 0 ("main") is never jittered - see searchLazySmp's doc comment
+    }
+    return 1 + (threadIndex % kLazySmpJitterPeriod);
+}
+
+} // namespace
+
+SearchResult searchLazySmp(const Position& p, int maxDepth, const TimeBudget& budget,
+                           int threadCount, const EvalFn& eval,
+                           const CancellationToken* cancellation,
+                           SharedTranspositionTable* sharedTt, const MpcConfig* mpc) {
+    const Clock::time_point start = Clock::now();
+    const Clock::time_point softDeadline = start + budget.soft;
+    const Clock::time_point hardDeadline = start + budget.hard;
+    const TtView tt = makeTtView(sharedTt);
+
+    if (threadCount <= 1) {
+        // No std::thread spawned at all - thread 0's work runs on the calling thread directly.
+        return iterativeDriver(p, maxDepth, eval, cancellation, tt, &softDeadline, &hardDeadline,
+                               mpc, jitteredStartDepth(0));
+    }
+
+    std::vector<SearchResult> results(static_cast<std::size_t>(threadCount));
+    std::vector<std::thread> threads;
+    threads.reserve(static_cast<std::size_t>(threadCount));
+    for (int i = 0; i < threadCount; ++i) {
+        threads.emplace_back([&, i] {
+            results[static_cast<std::size_t>(i)] =
+                iterativeDriver(p, maxDepth, eval, cancellation, tt, &softDeadline, &hardDeadline,
+                                mpc, jitteredStartDepth(i));
+        });
+    }
+    for (std::thread& worker : threads) {
+        worker.join();
+    }
+
+    std::uint64_t totalNodes = 0;
+    for (const SearchResult& r : results) {
+        totalNodes += r.nodes;
+    }
+    SearchResult finalResult = results[0]; // thread 0's own result is the one returned
+    finalResult.nodes = totalNodes;        // ...except nodes, which is the sum - see search.hpp
+    return finalResult;
 }
 
 } // namespace reversi

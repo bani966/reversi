@@ -4,6 +4,7 @@
 #include "reversi/eval.hpp"
 #include "reversi/mpc.hpp"
 #include "reversi/position.hpp"
+#include "reversi/shared_tt.hpp"
 #include "reversi/tt.hpp"
 
 #include <chrono>
@@ -113,5 +114,56 @@ SearchResult searchTimed(const Position& p, int maxDepth, const TimeBudget& budg
                          const EvalFn& eval = evaluateDiscDifferential,
                          const CancellationToken* cancellation = nullptr,
                          TranspositionTable* tt = nullptr, const MpcConfig* mpc = nullptr);
+
+// Per-thread depth-start stagger for searchLazySmp() below: thread `i`'s iterative-deepening
+// loop starts at `1 + (i % kLazySmpJitterPeriod)` instead of always 1 (thread 0, the "main"
+// thread, is the one exception - it always starts at 1, see searchLazySmp's own doc comment).
+// Deliberately simple: unjittered threads would all search the identical depth in lockstep at
+// the same wall-clock moment, making the shared table nearly useless (every thread hits/misses
+// identically); staggering start depths means different threads are usually at different
+// depths at any given moment, so their TT contributions are actually new information to
+// whichever thread finds them.
+constexpr int kLazySmpJitterPeriod = 4;
+
+// Lazy SMP (M8): `threadCount` independent iterative-deepening searches over the SAME shared,
+// concurrent-safe transposition table (SharedTranspositionTable, shared_tt.hpp), scaling via
+// redundant parallel exploration rather than explicit tree-splitting (not YBWC - no work is
+// ever assigned to a specific thread by subtree; every thread just runs its own full search
+// and opportunistically benefits from what other threads have already found).
+//
+// threadCount <= 1 runs thread 0's own work on the calling thread directly - no std::thread is
+// spawned at all, so this has zero threading overhead beyond what the single-threaded path
+// already has. threadCount > 1 spawns exactly `threadCount` threads (including thread 0);
+// their own iterative-deepening loop is the exact same iterativeDriver() searchIterative()/
+// searchTimed() already use, just parameterized with a jittered start depth per thread.
+//
+// Thread 0 ("main") never gets jittered - it always starts at depth 1, runs the identical
+// sequence searchTimed() always has, and its own SearchResult is the one returned:
+// completed/score/bestMove/depth describe thread 0's search exactly as if it had run alone,
+// except it may benefit from TT entries other threads populated. This can only ever save work,
+// never change the returned score: any TT entry that passes SharedTranspositionTable::probe()'s
+// validation is a genuinely-computed true result for its exact position/depth, from WHATEVER
+// thread computed it (see shared_tt.hpp's own doc comment) - the same "a correct table is a
+// pure time-saver, never changes the answer" invariant this project already relies on for the
+// single-threaded table, extended unchanged to the concurrent case (verified directly by
+// tests/engine/search_lazy_smp_test.cpp: searchLazySmp's score at a fixed depth exactly matches
+// plain search()'s, threadCount aside). Helper threads 1..threadCount-1's own results are
+// discarded entirely - their only contribution is the TT entries they leave behind.
+//
+// `result.nodes` is the SUM of every thread's own node count (total computational work - what
+// nps-scaling measurements need), a deliberate difference from every other function in this
+// header, which reports one search's own node count.
+//
+// `eval` and `mpc` must be safe to call concurrently from multiple threads with no external
+// synchronization - true for every EvalFn/MpcModel this project ships (evaluateDiscDifferential
+// is a stateless function; PatternEvaluator::evaluate() and MpcModel::lookup() are const methods
+// over data loaded once at construction and never mutated afterward), but worth stating as a
+// precondition for any future custom eval.
+// Same precondition as search(): hasLegalMove(p). Also: threadCount >= 1.
+SearchResult searchLazySmp(const Position& p, int maxDepth, const TimeBudget& budget,
+                           int threadCount, const EvalFn& eval = evaluateDiscDifferential,
+                           const CancellationToken* cancellation = nullptr,
+                           SharedTranspositionTable* sharedTt = nullptr,
+                           const MpcConfig* mpc = nullptr);
 
 } // namespace reversi
