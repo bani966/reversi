@@ -17,6 +17,14 @@ struct Palette {
     QColor panelBorder;      // thin borders/separators
     QColor textColor;        // warm cream, shared by coordinate labels and all chrome text
     QColor lastMoveHighlightColor; // low-opacity amber tint under the most recently played disc
+    // M9 phase 5: a solid, muted gold - deliberately a SEPARATE role from lastMoveHighlightColor
+    // above, not a reuse of it. lastMoveHighlightColor is a specific low-alpha board-overlay tint
+    // (chess.com's "soft tint under the square" convention, sized only for that use); accentColor
+    // is a solid emphasis color used sparingly across chrome (the MultiPV panel's top-ranked-line
+    // badge, the move-history list's current-row indicator) - overloading the board-overlay
+    // meaning onto general-purpose emphasis would make either use harder to change independently
+    // later.
+    QColor accentColor;
 };
 
 const Palette& palette();
