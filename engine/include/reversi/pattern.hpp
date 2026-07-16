@@ -23,6 +23,29 @@ enum class Symmetry {
 // Applies one symmetry to a single square index.
 int applySymmetry(Symmetry sym, int square);
 
+// The group inverse: applySymmetry(inverse(sym), applySymmetry(sym, square)) == square for
+// every square. The 6 reflections and Rotate180 are each their own inverse; Rotate90 and
+// Rotate270 are each other's inverse.
+Symmetry inverse(Symmetry sym);
+
+// A position together with the symmetry that maps the ORIGINAL position onto it.
+struct Canonicalized {
+    Position position;
+    Symmetry symmetryUsed;
+};
+
+// Canonicalizes `p`: applies all 8 symmetries to `p`'s occupied squares and returns whichever
+// image sorts lexicographically smallest as an (own, opp) pair, alongside the symmetry that
+// produced it.
+//
+// Directional contract (easy to get backwards - see opening_book.hpp for the concrete
+// consequence): if canonicalize(p) == {p', s}, then p' is `s` applied to `p`. A move `m`
+// legal in `p` corresponds to move `applySymmetry(s, m)` in `p'`. Conversely, given a stored
+// move `m'` that belongs to canonical position `q'` where canonicalize(q) == {q', s_q}, the
+// move to actually play in `q` is `applySymmetry(inverse(s_q), m')` - NOT `applySymmetry(s_q,
+// m')` again.
+Canonicalized canonicalize(const Position& p);
+
 // One symmetry-equivalence class of pattern instances: every instance in `instances` shares
 // exactly one weight table of size 3^length (length = instances[i].size(), equal for all i).
 struct PatternClass {

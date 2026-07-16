@@ -171,5 +171,104 @@ TEST(TernaryIndex, OrderOfInstanceSquaresChangesTheIndex) {
     EXPECT_NE(forward, backward);
 }
 
+TEST(Inverse, RoundTripsForEverySymmetryAndSquare) {
+    for (const Symmetry sym :
+         {Symmetry::Identity, Symmetry::Rotate90, Symmetry::Rotate180, Symmetry::Rotate270,
+          Symmetry::ReflectHorizontal, Symmetry::ReflectVertical, Symmetry::ReflectMainDiag,
+          Symmetry::ReflectAntiDiag}) {
+        for (int square = 0; square < kBoardSquares; ++square) {
+            const int image = applySymmetry(sym, square);
+            EXPECT_EQ(applySymmetry(inverse(sym), image), square)
+                << "symmetry " << static_cast<int>(sym) << " square " << square;
+        }
+    }
+}
+
+TEST(Inverse, RotationsAreEachOthersInverseAndReflectionsAreSelfInverse) {
+    EXPECT_EQ(inverse(Symmetry::Rotate90), Symmetry::Rotate270);
+    EXPECT_EQ(inverse(Symmetry::Rotate270), Symmetry::Rotate90);
+    EXPECT_EQ(inverse(Symmetry::Identity), Symmetry::Identity);
+    EXPECT_EQ(inverse(Symmetry::Rotate180), Symmetry::Rotate180);
+    EXPECT_EQ(inverse(Symmetry::ReflectHorizontal), Symmetry::ReflectHorizontal);
+    EXPECT_EQ(inverse(Symmetry::ReflectVertical), Symmetry::ReflectVertical);
+    EXPECT_EQ(inverse(Symmetry::ReflectMainDiag), Symmetry::ReflectMainDiag);
+    EXPECT_EQ(inverse(Symmetry::ReflectAntiDiag), Symmetry::ReflectAntiDiag);
+}
+
+// Hand-derived before implementing: a single disc at h1 has 8 symmetric images at squares
+// {h1, a1, a8, h8, h8, a1, a8, h1} for {Identity, Rotate90, Rotate180, Rotate270,
+// ReflectHorizontal, ReflectVertical, ReflectMainDiag, ReflectAntiDiag} respectively (h1=7,
+// a1=0, a8=56, h8=63 as square indices) - the smallest is a1 (square 0), first achieved by
+// Rotate90 (index 1, before ReflectVertical's later tie at the same value), so canonicalize
+// must pick symmetryUsed = Rotate90, not the tying ReflectVertical.
+TEST(Canonicalize, HandDerivedSingleDiscExample) {
+    Position p;
+    p.own = bit(sq("h1"));
+    const Canonicalized c = canonicalize(p);
+    EXPECT_EQ(c.position.own, bit(sq("a1")));
+    EXPECT_EQ(c.position.opp, Bitboard{0});
+    EXPECT_EQ(c.symmetryUsed, Symmetry::Rotate90);
+}
+
+TEST(Canonicalize, ResultIsTheLexicographicallySmallestImageOverAllEightSymmetries) {
+    Position p;
+    p.own = bit(sq("h1")) | bit(sq("g2"));
+    p.opp = bit(sq("a8"));
+    const Canonicalized c = canonicalize(p);
+    for (const Symmetry sym :
+         {Symmetry::Identity, Symmetry::Rotate90, Symmetry::Rotate180, Symmetry::Rotate270,
+          Symmetry::ReflectHorizontal, Symmetry::ReflectVertical, Symmetry::ReflectMainDiag,
+          Symmetry::ReflectAntiDiag}) {
+        Bitboard own = 0;
+        Bitboard opp = 0;
+        for (int square = 0; square < kBoardSquares; ++square) {
+            if ((p.own & bit(square)) != 0) {
+                own |= bit(applySymmetry(sym, square));
+            }
+            if ((p.opp & bit(square)) != 0) {
+                opp |= bit(applySymmetry(sym, square));
+            }
+        }
+        EXPECT_TRUE(own > c.position.own || (own == c.position.own && opp >= c.position.opp))
+            << "symmetry " << static_cast<int>(sym) << " produced a smaller image than the "
+            << "one canonicalize() picked";
+    }
+}
+
+// The directional contract from pattern.hpp, verified end-to-end with hand-computed squares -
+// this is the exact seam ("apply s again" vs "apply inverse(s)") that caused M5's FFO
+// perspective bug in a different form, so it gets its own concrete, non-round-trip test.
+//
+// Setup: a real position P has one mover disc at h1; canonicalize(P) picks Rotate90 (per the
+// hand-derived example above), mapping h1 -> a1. A move M = g1 (square 6) is actually played
+// in P. Build time stores applySymmetry(Rotate90, M) against the canonical position - g1
+// (file 6, rank 0) rotates to (rank, 7-file) = (0, 1) = a2 (square 8). At lookup time, query Q
+// == P again; canonicalize(Q) again picks Rotate90; the book holds storedMove = a2 for this
+// canonical position. Recovering the move to play in Q must use inverse(Rotate90) = Rotate270,
+// NOT Rotate90 again: applySymmetry(Rotate270, a2) rotates (file 0, rank 1) -> (7-rank, file) =
+// (6, 0) = g1 = M, correctly recovered. Applying Rotate90 a second time instead would give
+// (rank, 7-file) = (1, 7) = b8 (square 57) - a different, wrong square - demonstrating why the
+// inverse is required, not just a repeat of the same symmetry.
+TEST(Canonicalize, BuildAndLookupMustUseOppositeSymmetryDirectionsNotTheSameOneTwice) {
+    Position p;
+    p.own = bit(sq("h1"));
+    const Canonicalized c = canonicalize(p);
+    ASSERT_EQ(c.symmetryUsed, Symmetry::Rotate90);
+
+    const int playedMove = sq("g1");
+    const int storedMove = applySymmetry(c.symmetryUsed, playedMove);
+    EXPECT_EQ(storedMove, sq("a2"));
+
+    const int correctlyRecovered = applySymmetry(inverse(c.symmetryUsed), storedMove);
+    EXPECT_EQ(correctlyRecovered, playedMove);
+
+    const int incorrectlyRecovered = applySymmetry(c.symmetryUsed, storedMove);
+    EXPECT_NE(incorrectlyRecovered, playedMove)
+        << "applying the same symmetry twice must NOT accidentally recover the correct move - "
+           "if it does, this example no longer distinguishes correct (inverse) from incorrect "
+           "(repeat) recovery and needs a different position/move pair";
+    EXPECT_EQ(incorrectlyRecovered, sq("b8"));
+}
+
 } // namespace
 } // namespace reversi::pattern

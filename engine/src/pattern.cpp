@@ -123,6 +123,49 @@ int applySymmetry(Symmetry sym, int square) {
     return squareIndex(nf, nr);
 }
 
+Symmetry inverse(Symmetry sym) {
+    switch (sym) {
+    case Symmetry::Rotate90:
+        return Symmetry::Rotate270;
+    case Symmetry::Rotate270:
+        return Symmetry::Rotate90;
+    case Symmetry::Identity:
+    case Symmetry::Rotate180:
+    case Symmetry::ReflectHorizontal:
+    case Symmetry::ReflectVertical:
+    case Symmetry::ReflectMainDiag:
+    case Symmetry::ReflectAntiDiag:
+        return sym;
+    }
+    return sym; // unreachable
+}
+
+namespace {
+
+Bitboard transformBitboard(Symmetry sym, Bitboard b) {
+    Bitboard out = 0;
+    while (b != 0) {
+        const int square = std::countr_zero(b);
+        b &= b - 1;
+        out |= bit(applySymmetry(sym, square));
+    }
+    return out;
+}
+
+} // namespace
+
+Canonicalized canonicalize(const Position& p) {
+    Canonicalized best{p, Symmetry::Identity};
+    for (const Symmetry sym : kAllSymmetries) {
+        const Position candidate{transformBitboard(sym, p.own), transformBitboard(sym, p.opp)};
+        if (candidate.own < best.position.own ||
+            (candidate.own == best.position.own && candidate.opp < best.position.opp)) {
+            best = {candidate, sym};
+        }
+    }
+    return best;
+}
+
 const std::vector<PatternClass>& allPatternClasses() {
     static const std::vector<PatternClass> kClasses = [] {
         std::vector<PatternClass> classes;
