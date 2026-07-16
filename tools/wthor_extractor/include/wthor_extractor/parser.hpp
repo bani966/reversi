@@ -56,6 +56,7 @@ std::vector<GameRecord> parseWtbFile(const std::filesystem::path& path);
 struct ReplayedPosition {
     reversi::Position pos; // mover-relative, exactly as applyMove/applyPass already produce
     bool moverIsBlack;     // which absolute color pos.own refers to at this point
+    int move;              // the square actually played from `pos` (this project's own convention)
 };
 
 struct ReplayedGame {

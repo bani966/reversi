@@ -91,7 +91,7 @@ ReplayedGame replayGame(const GameRecord& record) {
                                      std::to_string(square) + " (tournament " +
                                      std::to_string(record.tournamentId) + ")");
         }
-        result.positions.push_back({pos, blackToMove});
+        result.positions.push_back({pos, blackToMove, square});
         pos = reversi::applyMove(pos, square);
         blackToMove = !blackToMove;
     }

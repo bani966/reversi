@@ -4,6 +4,7 @@
 add_library(wthor_extractor_lib STATIC
     src/parser.cpp
     src/dataset.cpp
+    src/book.cpp
 )
 target_include_directories(wthor_extractor_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # PUBLIC: parser.hpp's public API uses reversi::Position directly, so consumers need engine/'s
@@ -26,6 +27,7 @@ FetchContent_MakeAvailable(googletest)
 add_executable(wthor_extractor_tests
     tests/parser_test.cpp
     tests/dataset_test.cpp
+    tests/book_test.cpp
 )
 target_link_libraries(wthor_extractor_tests PRIVATE wthor_extractor_lib reversi::engine
                                                     GTest::gtest_main reversi_warnings)

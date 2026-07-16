@@ -147,6 +147,12 @@ TEST(ReplayGame, ReplaysFourRealValidatedMovesWithCorrectMoverTracking) {
     EXPECT_FALSE(replayed.positions[1].moverIsBlack);
     EXPECT_TRUE(replayed.positions[2].moverIsBlack);
     EXPECT_FALSE(replayed.positions[3].moverIsBlack);
+    // Each ReplayedPosition's move field is exactly the record's move played from that
+    // position - the opening book's build path (tools/wthor_extractor/book.hpp) relies on this.
+    EXPECT_EQ(replayed.positions[0].move, record.moves[0]);
+    EXPECT_EQ(replayed.positions[1].move, record.moves[1]);
+    EXPECT_EQ(replayed.positions[2].move, record.moves[2]);
+    EXPECT_EQ(replayed.positions[3].move, record.moves[3]);
     EXPECT_EQ(replayed.finalBlackDiscs + replayed.finalWhiteDiscs, 4 + 4); // 4 plies played
 }
 

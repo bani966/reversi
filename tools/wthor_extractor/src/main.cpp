@@ -1,3 +1,4 @@
+#include "wthor_extractor/book.hpp"
 #include "wthor_extractor/dataset.hpp"
 #include "wthor_extractor/parser.hpp"
 
@@ -9,7 +10,9 @@
 #include <fstream>
 #include <iostream>
 #include <random>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -26,7 +29,14 @@ void printUsage() {
               << "      Generates a dataset from fixed-seed engine self-play (fully legal by\n"
               << "      construction, zero dependency on WTHOR data) - used for the small\n"
               << "      committed dev/test weight fixture, sidestepping any question about\n"
-              << "      redistributing data derived from the WTHOR database.\n";
+              << "      redistributing data derived from the WTHOR database.\n"
+              << "  wthor-extractor build-book <path.wtb> [<path.wtb> ...] --output <book.bin>\n"
+              << "                              [--max-ply N] [--min-count N]\n"
+              << "      Parses and replays every input file, accumulates canonicalized opening\n"
+              << "      positions within the first max-ply real moves (default 20), and writes\n"
+              << "      one book entry per canonical position observed at least min-count times\n"
+              << "      (default 5) - the single most-played move, ties broken by average\n"
+              << "      outcome. See engine/include/reversi/opening_book.hpp for the reader.\n";
 }
 
 int runVerify(const char* wtbPath) {
@@ -110,6 +120,62 @@ int runSynthDataset(int numGames, unsigned seed, const char* outputPath) {
     return 0;
 }
 
+// Parses `build-book`'s arguments: any number of .wtb input paths plus `--output <path>`
+// (required) and optional `--max-ply N` / `--min-count N` overrides, in any relative order.
+int runBuildBook(const std::vector<std::string>& args) {
+    std::vector<std::string> wtbPaths;
+    std::string outputPath;
+    int maxPly = 20;
+    unsigned minCount = 5;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "--output" && i + 1 < args.size()) {
+            outputPath = args[++i];
+        } else if (args[i] == "--max-ply" && i + 1 < args.size()) {
+            maxPly = std::atoi(args[++i].c_str());
+        } else if (args[i] == "--min-count" && i + 1 < args.size()) {
+            minCount = static_cast<unsigned>(std::atoi(args[++i].c_str()));
+        } else {
+            wtbPaths.push_back(args[i]);
+        }
+    }
+    if (wtbPaths.empty() || outputPath.empty()) {
+        std::cerr << "build-book requires at least one .wtb input path and --output <path>\n";
+        return 1;
+    }
+
+    wthor::BookAccumulator acc;
+    int gamesOk = 0;
+    int gamesFailed = 0;
+    for (const std::string& wtbPath : wtbPaths) {
+        const std::vector<wthor::GameRecord> records = wthor::parseWtbFile(wtbPath);
+        std::cout << wtbPath << ": parsed " << records.size() << " game record(s)\n";
+        for (const wthor::GameRecord& record : records) {
+            try {
+                const wthor::ReplayedGame replayed = wthor::replayGame(record);
+                wthor::accumulateBookGame(replayed, maxPly, acc);
+                ++gamesOk;
+            } catch (const std::exception& e) {
+                std::cerr << "  FAILED: " << e.what() << "\n";
+                ++gamesFailed;
+            }
+        }
+    }
+
+    const std::vector<wthor::BookEntry> entries = wthor::finalizeBook(acc, minCount);
+    std::ofstream out(outputPath, std::ios::binary);
+    if (!out) {
+        std::cerr << "cannot open output file: " << outputPath << "\n";
+        return 1;
+    }
+    wthor::writeBookFile(entries, out);
+
+    std::cout << gamesOk << " games replayed (" << gamesFailed << " failed), " << acc.size()
+              << " distinct canonical positions seen within " << maxPly << " plies, "
+              << entries.size() << " book entries written (min-count " << minCount << ") to "
+              << outputPath << "\n";
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -128,6 +194,13 @@ int main(int argc, char** argv) {
         if (command == "synth-dataset" && argc >= 5) {
             return runSynthDataset(std::atoi(argv[2]), static_cast<unsigned>(std::atoi(argv[3])),
                                    argv[4]);
+        }
+        if (command == "build-book" && argc >= 3) {
+            std::vector<std::string> args;
+            for (int i = 2; i < argc; ++i) {
+                args.emplace_back(argv[i]);
+            }
+            return runBuildBook(args);
         }
         printUsage();
         return 1;
