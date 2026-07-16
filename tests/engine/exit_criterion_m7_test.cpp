@@ -23,8 +23,8 @@ namespace {
 // committed dev fixture (tests/data/dev_mpc_model.bin, fit from 20 self-played games) has no
 // real tuning value, same reasoning as M6's dev_pattern_weights.bin/dev_opening_book.bin. So
 // these are DISABLED_ by default, run on demand with a real model file path:
-//   REVERSI_M7_REAL_MODEL=<path> [REVERSI_M7_T=<t>] \
-//     build/msvc/tests/Release/engine_tests.exe --gtest_filter=*ExitCriterionM7* \
+//   REVERSI_M7_REAL_MODEL=<path> [REVERSI_M7_T=<t>]
+//     build/msvc/tests/Release/engine_tests.exe --gtest_filter=*ExitCriterionM7*
 //     --gtest_also_run_disabled_tests
 //
 // Measured results: see DEVLOG.md / the step-5 commit message for the actual numbers and the
