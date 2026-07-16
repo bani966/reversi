@@ -1,8 +1,9 @@
-# Pure C++20 library: .wtb parsing, move replay, and (later steps) pattern-feature extraction.
+# Pure C++20 library: .wtb parsing, move replay, and pattern-feature dataset extraction.
 # Depends only on reversi::engine, same layering rule as cli/ - reuses Position/applyMove/
-# legalMoves directly rather than reimplementing game rules for this pipeline.
+# legalMoves/pattern directly rather than reimplementing game rules for this pipeline.
 add_library(wthor_extractor_lib STATIC
     src/parser.cpp
+    src/dataset.cpp
 )
 target_include_directories(wthor_extractor_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # PUBLIC: parser.hpp's public API uses reversi::Position directly, so consumers need engine/'s
@@ -24,6 +25,7 @@ FetchContent_MakeAvailable(googletest)
 
 add_executable(wthor_extractor_tests
     tests/parser_test.cpp
+    tests/dataset_test.cpp
 )
 target_link_libraries(wthor_extractor_tests PRIVATE wthor_extractor_lib reversi::engine
                                                     GTest::gtest_main reversi_warnings)
