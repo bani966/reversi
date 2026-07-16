@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(REVERSI_BUILD_APP "Build the Qt GUI application" ON)
 option(REVERSI_BUILD_CLI "Build the command-line harness" ON)
 option(REVERSI_BUILD_TESTS "Build unit tests" ON)
+option(REVERSI_BUILD_TOOLS "Build the WTHOR training pipeline tools" OFF)
 option(REVERSI_WERROR "Treat warnings as errors" OFF)
 
 # Shared warning flags, consumed privately by every target in this repo.
@@ -38,4 +39,8 @@ endif()
 if(REVERSI_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+if(REVERSI_BUILD_TOOLS)
+    add_subdirectory(tools)
 endif()
