@@ -6,6 +6,7 @@
 #include <array>
 #include <bit>
 #include <chrono>
+#include <optional>
 
 namespace reversi {
 
@@ -61,6 +62,7 @@ struct SearchContext {
     const CancellationToken* cancellation;
     TranspositionTable* tt;
     const Clock::time_point* hardDeadline; // may be null: no time limit
+    const MpcConfig* mpc;                  // may be null: Multi-ProbCut disabled
     std::uint64_t nodes = 0;
     bool timedOut = false; // sticky once the hard deadline is observed passed
     int deadlineCheckCountdown = kDeadlineCheckInterval;
@@ -69,8 +71,9 @@ struct SearchContext {
 };
 
 SearchContext makeContext(const EvalFn& eval, const CancellationToken* cancellation,
-                          TranspositionTable* tt, const Clock::time_point* hardDeadline) {
-    SearchContext ctx{eval, cancellation, tt, hardDeadline};
+                          TranspositionTable* tt, const Clock::time_point* hardDeadline,
+                          const MpcConfig* mpc) {
+    SearchContext ctx{eval, cancellation, tt, hardDeadline, mpc};
     for (auto& plyKillers : ctx.killers) {
         plyKillers = {-1, -1};
     }
@@ -194,6 +197,30 @@ int negamax(const Position& pos, int depth, int ply, int alpha, int beta, Search
         }
     }
 
+    // Multi-ProbCut: a cheap shallow probe of THIS SAME position, predicting the deep value via
+    // fitted coefficients, cutting without exploring any children when the prediction clears
+    // the current window by a confidence margin. This is only ever reached for internal nodes
+    // (negamax is never called for the root - windowedSearch iterates root moves directly), so
+    // the root always computes a real move regardless of MPC. Never stored into the TT: a
+    // speculative bound masquerading as a genuinely-searched entry would be a new corruption
+    // surface (see mpc.hpp's doc comment and CLAUDE.md for the full reasoning).
+    if (ctx.mpc != nullptr && ctx.mpc->model != nullptr) {
+        if (const std::optional<MpcModel::Coefficients> coeffs = ctx.mpc->model->lookup(depth)) {
+            const int shallowValue =
+                negamax(pos, coeffs->shallowDepth, ply, -kInfinity, kInfinity, ctx);
+            if (!stopRequested(ctx)) {
+                const double predicted = coeffs->a + coeffs->b * static_cast<double>(shallowValue);
+                const double margin = ctx.mpc->t * coeffs->sigma;
+                if (predicted - margin >= static_cast<double>(beta)) {
+                    return beta; // confident fail-high: cut
+                }
+                if (predicted + margin <= static_cast<double>(alpha)) {
+                    return alpha; // confident fail-low: cut
+                }
+            }
+        }
+    }
+
     const int alphaOriginal = alpha;
     const MoveList list = orderedMoves(moves, ttMove, ctx, ply);
     int best = -kInfinity;
@@ -244,8 +271,9 @@ int negamax(const Position& pos, int depth, int ply, int alpha, int beta, Search
 // search.hpp for what a failed window means for the returned score/bestMove.
 SearchResult windowedSearch(const Position& p, int depth, int alphaInit, int betaInit,
                             const EvalFn& eval, const CancellationToken* cancellation,
-                            TranspositionTable* tt, const Clock::time_point* hardDeadline) {
-    SearchContext ctx = makeContext(eval, cancellation, tt, hardDeadline);
+                            TranspositionTable* tt, const Clock::time_point* hardDeadline,
+                            const MpcConfig* mpc) {
+    SearchContext ctx = makeContext(eval, cancellation, tt, hardDeadline, mpc);
     int ttMove = -1;
     if (tt != nullptr) {
         if (const TTEntry* entry = tt->probe(zobristHash(p)); entry != nullptr) {
@@ -309,7 +337,7 @@ constexpr int kAspirationDelta = 8;
 SearchResult iterativeDriver(const Position& p, int maxDepth, const EvalFn& eval,
                              const CancellationToken* cancellation, TranspositionTable* tt,
                              const Clock::time_point* softDeadline,
-                             const Clock::time_point* hardDeadline) {
+                             const Clock::time_point* hardDeadline, const MpcConfig* mpc) {
     SearchResult deepest;
     deepest.completed = false; // stays false unless some iteration actually finishes
     std::uint64_t totalNodes = 0;
@@ -321,13 +349,14 @@ SearchResult iterativeDriver(const Position& p, int maxDepth, const EvalFn& eval
         if (!deepest.completed) {
             // First iteration (nothing to center a window on): full width.
             iteration = windowedSearch(p, depth, -kInfinity, kInfinity, eval, cancellation, tt,
-                                       hardDeadline);
+                                       hardDeadline, mpc);
             totalNodes += iteration.nodes;
         } else {
             // Aspiration: assume this depth's score lands near the previous depth's.
             const int alpha = deepest.score - kAspirationDelta;
             const int beta = deepest.score + kAspirationDelta;
-            iteration = windowedSearch(p, depth, alpha, beta, eval, cancellation, tt, hardDeadline);
+            iteration =
+                windowedSearch(p, depth, alpha, beta, eval, cancellation, tt, hardDeadline, mpc);
             totalNodes += iteration.nodes;
             if (iteration.completed && (iteration.score <= alpha || iteration.score >= beta)) {
                 // Failed the window: the score is only a bound and the move untrustworthy.
@@ -335,7 +364,7 @@ SearchResult iterativeDriver(const Position& p, int maxDepth, const EvalFn& eval
                 // widening straight to full width keeps the failure path trivially correct;
                 // the happy path is where the speed lives anyway.)
                 iteration = windowedSearch(p, depth, -kInfinity, kInfinity, eval, cancellation, tt,
-                                           hardDeadline);
+                                           hardDeadline, mpc);
                 totalNodes += iteration.nodes;
             }
         }
@@ -351,27 +380,30 @@ SearchResult iterativeDriver(const Position& p, int maxDepth, const EvalFn& eval
 } // namespace
 
 SearchResult search(const Position& p, int depth, const EvalFn& eval,
-                    const CancellationToken* cancellation, TranspositionTable* tt) {
-    return windowedSearch(p, depth, -kInfinity, kInfinity, eval, cancellation, tt, nullptr);
+                    const CancellationToken* cancellation, TranspositionTable* tt,
+                    const MpcConfig* mpc) {
+    return windowedSearch(p, depth, -kInfinity, kInfinity, eval, cancellation, tt, nullptr, mpc);
 }
 
 SearchResult searchWindow(const Position& p, int depth, int alpha, int beta, const EvalFn& eval,
-                          const CancellationToken* cancellation, TranspositionTable* tt) {
-    return windowedSearch(p, depth, alpha, beta, eval, cancellation, tt, nullptr);
+                          const CancellationToken* cancellation, TranspositionTable* tt,
+                          const MpcConfig* mpc) {
+    return windowedSearch(p, depth, alpha, beta, eval, cancellation, tt, nullptr, mpc);
 }
 
 SearchResult searchIterative(const Position& p, int maxDepth, const EvalFn& eval,
-                             const CancellationToken* cancellation, TranspositionTable* tt) {
-    return iterativeDriver(p, maxDepth, eval, cancellation, tt, nullptr, nullptr);
+                             const CancellationToken* cancellation, TranspositionTable* tt,
+                             const MpcConfig* mpc) {
+    return iterativeDriver(p, maxDepth, eval, cancellation, tt, nullptr, nullptr, mpc);
 }
 
 SearchResult searchTimed(const Position& p, int maxDepth, const TimeBudget& budget,
                          const EvalFn& eval, const CancellationToken* cancellation,
-                         TranspositionTable* tt) {
+                         TranspositionTable* tt, const MpcConfig* mpc) {
     const Clock::time_point start = Clock::now();
     const Clock::time_point softDeadline = start + budget.soft;
     const Clock::time_point hardDeadline = start + budget.hard;
-    return iterativeDriver(p, maxDepth, eval, cancellation, tt, &softDeadline, &hardDeadline);
+    return iterativeDriver(p, maxDepth, eval, cancellation, tt, &softDeadline, &hardDeadline, mpc);
 }
 
 } // namespace reversi

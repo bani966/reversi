@@ -31,6 +31,7 @@ add_executable(engine_tests
     engine/opening_book_test.cpp
     engine/move_selector_test.cpp
     engine/mpc_test.cpp
+    engine/mpc_search_test.cpp
     engine/exit_criterion_m6_test.cpp
     engine/players_test.cpp
     engine/selfplay_test.cpp

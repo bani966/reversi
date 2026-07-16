@@ -2,6 +2,7 @@
 
 #include "reversi/cancellation.hpp"
 #include "reversi/eval.hpp"
+#include "reversi/mpc.hpp"
 #include "reversi/position.hpp"
 #include "reversi/tt.hpp"
 
@@ -47,11 +48,17 @@ struct SearchResult {
 // be a different but equally-scoring one (verified optimal via tests/support/search_checks.*).
 // Nothing is stored from a cancelled subtree, so a table shared across searches can't be
 // poisoned by an abort.
+// `mpc`, if non-null and `mpc->model` is non-null (see mpc.hpp), enables Multi-ProbCut at
+// internal nodes: `mpc == nullptr` is the default on every call site and disables it entirely,
+// with zero overhead - the check happens before any extra work is attempted. When engaged, MPC
+// is a PROBABILISTIC pruning technique (unlike everything else this function does) - it can
+// occasionally cut a node it shouldn't, changing the returned score/move; nothing else in this
+// signature carries that risk.
 // Precondition: hasLegalMove(p). The caller checks this / applies forced passes itself
 // before calling search — search never needs to pick a move for a position that has none.
 SearchResult search(const Position& p, int depth, const EvalFn& eval = evaluateDiscDifferential,
                     const CancellationToken* cancellation = nullptr,
-                    TranspositionTable* tt = nullptr);
+                    TranspositionTable* tt = nullptr, const MpcConfig* mpc = nullptr);
 
 // Iterative deepening driver over search(): runs complete fixed-depth searches at depth
 // 1, 2, ..., maxDepth and returns the deepest fully-finished iteration's result, with `nodes`
@@ -68,11 +75,11 @@ SearchResult search(const Position& p, int depth, const EvalFn& eval = evaluateD
 // iteration's score (see search.cpp's kAspirationDelta); a result that fails the window is
 // treated as the bound it is — never trusted as an answer — and re-searched full-window, so
 // the returned score is always exact (asserted against fixed-depth search by tests).
-// Same precondition as search(): hasLegalMove(p).
+// Same precondition as search(): hasLegalMove(p). `mpc`: same contract as search()'s.
 SearchResult searchIterative(const Position& p, int maxDepth,
                              const EvalFn& eval = evaluateDiscDifferential,
                              const CancellationToken* cancellation = nullptr,
-                             TranspositionTable* tt = nullptr);
+                             TranspositionTable* tt = nullptr, const MpcConfig* mpc = nullptr);
 
 // Root search over an explicit (alpha, beta) window — the primitive underneath aspiration
 // windows, exposed so the fail-high/fail-low paths are directly testable. If the true value
@@ -82,11 +89,11 @@ SearchResult searchIterative(const Position& p, int maxDepth,
 // high), and bestMove must NOT be trusted (on a fail-low it is whichever move was probed
 // first, not a validated choice). Callers must widen and re-search before acting on a failed
 // window — searchIterative does exactly that. search(p, depth, ...) is this with the full
-// (-inf, +inf) window.
+// (-inf, +inf) window. `mpc`: same contract as search()'s.
 SearchResult searchWindow(const Position& p, int depth, int alpha, int beta,
                           const EvalFn& eval = evaluateDiscDifferential,
                           const CancellationToken* cancellation = nullptr,
-                          TranspositionTable* tt = nullptr);
+                          TranspositionTable* tt = nullptr, const MpcConfig* mpc = nullptr);
 
 struct TimeBudget {
     // Soft limit: once elapsed, no NEW iteration is started (an iteration in flight runs on).
@@ -101,9 +108,10 @@ struct TimeBudget {
 // cancellation — the result still has completed == true as long as at least the depth-1
 // iteration finished (with a non-trivial budget it always does; depth 1 costs microseconds).
 // `cancellation` still works on top for external aborts (e.g. the GUI closing mid-search).
+// `mpc`: same contract as search()'s.
 SearchResult searchTimed(const Position& p, int maxDepth, const TimeBudget& budget,
                          const EvalFn& eval = evaluateDiscDifferential,
                          const CancellationToken* cancellation = nullptr,
-                         TranspositionTable* tt = nullptr);
+                         TranspositionTable* tt = nullptr, const MpcConfig* mpc = nullptr);
 
 } // namespace reversi

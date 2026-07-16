@@ -62,6 +62,32 @@ guide later, not the guide itself.
   needs no real game data of any kind to begin with), it's purely about keeping the routine
   test suite fast.
 
+### Step 4: search.hpp/.cpp MPC integration
+
+- Built: `MpcConfig` threaded through `search()`/`searchWindow()`/`searchIterative()`/
+  `searchTimed()` as a new trailing defaulted parameter (search.hpp's public API DOES change
+  here, unlike M6 Phase 2's opening book, which deliberately stayed outside it - MPC has to run
+  inside the recursive tree at arbitrary internal nodes, it can't be a root-only wrapper). The
+  cut-check lives in `negamax`, right after the existing TT-probe block: a full-window shallow
+  probe of the SAME position, predicted deep value compared against the current window by
+  `t * sigma`, cutting (returning the window bound, never storing into the TT) on a confident
+  clear.
+- Interesting architectural note (worth its own callout since it's the opposite conclusion from
+  M6 Phase 2): `negamax` is structurally never called for the root - `windowedSearch` iterates
+  root moves directly - so the MPC check needed no extra `ply > 0` guard at all; it falls out of
+  the existing control flow for free, and the root always computes a real move regardless of
+  whether MPC is enabled.
+- Interesting test-design finding (confirms a detail flagged in mpc.hpp's own doc comment): a
+  model that's loaded and engaged but calibrated to NEVER trigger (astronomically large sigma)
+  still costs MORE nodes than MPC fully off, because every eligible node still pays for its
+  shallow probe even when the probe never leads to a cut. Verified directly with
+  `EXPECT_GE(with.nodes, without.nodes)` - `mpcModel == nullptr` is the only genuinely free
+  off-switch; a huge `t`/sigma is not equivalent to off, just very conservative.
+- The "always cuts" synthetic-model test (huge intercept, tiny sigma, reduction-2 pairs chained
+  down to an uncovered depth so recursion always terminates) confirms the mechanism is actually
+  reachable: drastically fewer nodes across the benchmark set, still a legal, `completed` result
+  every time - not just "doesn't crash," a real positive control for the cut path itself.
+
 ## M0 — Scaffolding, CI
 
 - Built: repo layout (engine/cli/app/tests/tools), CMake presets, CI on Windows/macOS/Linux.
