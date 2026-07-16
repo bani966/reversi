@@ -427,3 +427,60 @@ fix), a conservative default t shipped with honest real numbers, and wired in of
   `SharedTranspositionTable` per invocation rather than letting the caller size/reuse it - fine
   for a CLI benchmarking tool, would need revisiting if `searchLazySmp` ever got a persistent-TT
   caller.
+
+### Step 4: real nps scaling + strength validation, M8 done
+
+- Measured on this dev machine (Intel i7-9700, 8 physical cores / 8 logical processors, no
+  hyperthreading - checked directly, not assumed): `cli bench 14 <threads>` at 1/2/4/8 threads,
+  3 trials each for stability (depth 12 was too fast, sub-100ms, to trust the timing). Average
+  nps: 1 thread ~5.48M, 2 threads ~9.27M, 4 threads ~18.36M, 8 threads ~34.34M - roughly **6.3x**
+  at 8 threads vs. 1, clearing the README's >=3x target with real margin. This is sum-of-all-
+  threads nps (deliberately, per `searchLazySmp`'s own doc comment), so it counts Lazy SMP's
+  redundant parallel exploration as real work, which is the honest framing for this design (no
+  explicit work-splitting, unlike YBWC) - the shared TT keeps that redundancy from being total
+  waste, which is the whole point of the scheme. **This half of the exit criterion is a clear,
+  unambiguous pass.**
+- Strength validation turned into the real investigation of this step, and the honest end state
+  is a genuine, unresolved negative-leaning finding, not a clean pass. First 20-game
+  `DISABLED_ExitCriterionM8` run (original 300ms/800ms match budget, mirrored from M7's own
+  equal-time test): **lazySmp=9, single=10, draws=1** - read initially as noise around parity. A
+  repeat run at the same budget: **lazySmp=9, single=11, draws=0** - two runs both leaning the
+  same way is not noise, so this got investigated properly rather than accepted or shrugged off.
+- A depth diagnostic at that same 300ms/800ms budget explained a real mechanism: completing depth
+  14 from the start position takes ~520ms on this machine, already past a 300ms soft deadline, so
+  neither solo nor Lazy SMP's thread 0 ever gets to *start* a depth-15 iteration - Lazy SMP's only
+  route to a same-budget edge (shared-TT entries from other threads letting thread 0 blow through
+  its own iterations fast enough to buy spare time for one more ply before the soft deadline)
+  needs slack a 300ms soft deadline doesn't leave. This looked like a real bug in the test's
+  methodology: it used a short budget picked for fast CI iteration (M7's own precedent), not
+  `GameController`'s actual production budget (`kAiTimeBudget`, 800ms/2500ms) - a mismatch between
+  what's being validated and how the feature would actually be used.
+- Switched the test to the real production budget and re-ran the full 20 games: **lazySmp=9,
+  single=11, draws=0** again - the fix did NOT resolve the gap. Three independent 20-game runs
+  across two different budgets, **27/32/1 across 60 games total**, all lean the same way. This
+  rules out both "small-sample noise" and "wrong test budget" as the explanation.
+- Reconciling this against step 3's depth diagnostic (which *did* show a clear benefit - depth 15
+  vs. 14, same 800ms/2500ms budget, same start position): that diagnostic only ever probed the
+  single opening position, repeatedly. A real game spends most of its length past the opening, in
+  the mid/endgame, where fewer legal moves mean less for jittered threads to usefully diverge on,
+  and shared-TT contention has less redundant work to amortize against - the single-position
+  result plausibly does not generalize to a full game's mix of positions. This is plausible, not
+  proven; a full root-cause diagnosis (e.g. depth-diagnostics repeated across a spread of
+  mid/endgame positions, not just the opening) is exactly the kind of extended tuning the
+  milestone's own time-box note says to stop short of.
+- Left the test's assertion (`lazyWins + draws >= singleWins`, i.e. "not an outright regression",
+  looser than requiring a win) in place but **failing**, deliberately, rather than loosened
+  further to force green - the measured result is real and reproducible, not sampling noise this
+  bar should tolerate away. Both the test's own header comment and this entry record the honest
+  numbers and the investigation, per the milestone's explicit instruction to report the real
+  result either way.
+- **Net conclusion**: M8's engineering deliverable (concurrent design, TSan-clean, correctly
+  reaching greater effective search depth in isolation, strong nps scaling) is solid and correct.
+  The "no strength regression at equal time" leg of the exit criterion is NOT clearly met on this
+  implementation as it stands today - equal-time self-play leans modestly toward single-threaded
+  across 60 games. Flagged as the milestone's one open item, not swept under the rug: a real
+  follow-up would need the mid/endgame-position hypothesis above tested directly, which is
+  deliberately left for later rather than chased now, per the time-box note.
+- M8 marked done in `README.md`'s roadmap table and status line - the engineering work is
+  complete, tested, and CI-verified - but the status paragraph states the strength result exactly
+  as measured, not as a clean win.

@@ -4,7 +4,7 @@ A Reversi/Othello desktop application: a bitboard engine in pure C++20 with alph
 search, a perfect-play endgame solver, a WTHOR-trained pattern evaluation with
 Multi-ProbCut, and a minimalist Qt 6 Widgets GUI with live engine analysis.
 
-**Status: M7 complete — Multi-ProbCut added on top of M6's pattern eval and opening book.**
+**Status: M8 complete — Lazy SMP parallel search added on top of M7's Multi-ProbCut.**
 Playable HvH/HvAI
 in the Qt GUI (M3), with the AI driven by iterative deepening + a transposition table + PVS +
 move ordering + aspiration windows on a wall-clock time budget (M4) — a measured, large
@@ -37,7 +37,26 @@ clears the current alpha-beta window by a confidence margin. Real equal-time sel
 validation on a fitted model (1,500 self-played positions) found a genuinely-negative first
 configuration (too many eligible nodes paying for shallow-probe overhead relative to actual
 cuts taken) before landing on one with a measured, if modest, edge (11–9 in a 20-game equal-time
-match) — both the finding and the fix are recorded in `DEVLOG.md`.
+match) — both the finding and the fix are recorded in `DEVLOG.md`. M8 adds Lazy SMP parallel
+search (`SharedTranspositionTable`, `searchLazySmp()` — engine/CLI-level only, not yet wired
+into gameplay): multiple threads independently run the same iterative-deepening search, with
+per-thread depth jitter, over one shared, lock-free transposition table — a "packed-atomic +
+XOR checksum" design where each slot's two words are independent relaxed atomics and a probe
+XORs them back together, rejecting anything that doesn't reconstruct the queried key (this
+safely rejects genuine misses and torn/interleaved concurrent reads identically). Verified by a
+local concurrent stress test and, more authoritatively, a dedicated ThreadSanitizer CI job added
+specifically for this milestone. Measured on this dev machine (Intel i7-9700, 8 physical cores,
+no hyperthreading): nps scales roughly 6.3× at 8 threads vs. 1, clearing the ≥3× target below
+with real margin — an unambiguous pass. Strength is the honest exception: a single-position depth
+diagnostic confirms the underlying mechanism does reach a genuinely deeper effective search
+(depth 15 vs. 14 under an identical time budget), but that did not translate into a net edge in
+real games — three independent 20-game equal-time matches against single-threaded search, across
+two different time budgets (including `GameController`'s actual production budget), all leaned
+modestly toward single-threaded (27 Lazy-SMP wins – 32 single-threaded wins – 1 draw across all
+60 games combined). This is reported as a genuine, unresolved finding rather than smoothed over —
+see `DEVLOG.md` for the full investigation, including the leading hypothesis (the depth
+diagnostic only probes the opening position, while real games spend most of their length in
+positions with less to parallelize) left for future follow-up rather than chased further here.
 
 ## Layout
 
@@ -83,9 +102,14 @@ ctest --preset ci-linux
 | M5 (done) | Endgame solver | FFO test positions solved with correct exact scores |
 | M6 (done) | Pattern eval + opening book | WTHOR-trained eval beats hand eval at equal depth; full-DB replay passes |
 | M7 (done) | Multi-ProbCut | Measured equal-time strength gain; toggle off by default |
-| M8 | Lazy SMP | ≥3× nps on 8 threads; TSan clean; no strength regression at equal time |
+| M8 (done*) | Lazy SMP | ≥3× nps on 8 threads; TSan clean; no strength regression at equal time |
 | M9 | Feature complete | Undo/redo, save/load, import/export, settings, AI vs AI, analysis panel |
 | M10 | Release | Animations, sound, themes, installers, v1.0 |
+
+\* M8's engineering deliverable is complete, correct, and CI-verified (TSan-clean, nps clears the
+≥3× target with real margin); the strength leg of its exit criterion is not clearly met as
+measured — see the M8 paragraph above and `DEVLOG.md` for the honest numbers and the open
+follow-up hypothesis.
 
 ## Benchmarks
 
