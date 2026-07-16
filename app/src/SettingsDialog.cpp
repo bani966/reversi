@@ -115,8 +115,9 @@ SettingsDialog::SettingsDialog(GameController* controller, QWidget* parent)
 }
 
 void SettingsDialog::loadOpeningBook() {
-    const QString path = QFileDialog::getOpenFileName(
-        this, QStringLiteral("Load Opening Book"), QString(), QStringLiteral("Opening Book (*.bin)"));
+    const QString path =
+        QFileDialog::getOpenFileName(this, QStringLiteral("Load Opening Book"), QString(),
+                                     QStringLiteral("Opening Book (*.bin)"));
     if (path.isEmpty()) {
         return;
     }
@@ -137,7 +138,8 @@ void SettingsDialog::loadMpcModel() {
         return;
     }
     if (!controller_->loadMpcModel(path)) {
-        QMessageBox::warning(this, QStringLiteral("Load MPC Model"), controller_->lastErrorMessage());
+        QMessageBox::warning(this, QStringLiteral("Load MPC Model"),
+                             controller_->lastErrorMessage());
         return;
     }
     mpcStatusLabel_->setText(QFileInfo(path).fileName());
