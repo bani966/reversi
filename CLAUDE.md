@@ -21,7 +21,10 @@ time; do not start features from later milestones without being asked.
   at the depth reached" (a lower bound on the true game value), while `solveExact()`'s means
   the actual final result — a table shared between the two would let the solver trust a
   heuristic-search entry as if it were exact, silently corrupting an otherwise-perfect solve.
-  Give each mode its own table. (Full reasoning in `solver.hpp`'s doc comment on `tt`.)
+  Give each mode its own table. (Full reasoning in `solver.hpp`'s doc comment on `tt`.) This
+  applies equally to `selectMove()` (`engine/include/reversi/move_selector.hpp`, M6 Phase 2's
+  book → solver → search dispatch), which takes `searchTt`/`solverTt` as two separate
+  parameters for exactly this reason — never pass the same table for both.
 - Any trained `EvalFn` (e.g. `PatternEvaluator`, `engine/include/reversi/pattern_eval.hpp`)
   must predict a position's final disc differential from the mover's perspective — exactly
   `terminalScore()`'s scale and meaning. `search.cpp`'s `negamax` returns `terminalScore()` for
@@ -58,10 +61,16 @@ added to this pipeline). Two pieces, deliberately different languages for differ
   + replay, report illegal moves — the rules-engine stress test), `extract <file.wtb>
   <out.txt>` (also writes the sparse training dataset), `synth-dataset <games> <seed> <out.txt>`
   (generates a dataset from fixed-seed engine self-play instead of real WTHOR data — used for
-  the committed dev/test fixture, see below). `.wtb` byte layout is documented in
+  the committed dev/test fixture, see below), `build-book <file.wtb...> --output <book.bin>
+  [--max-ply N] [--min-count N]` (M6 Phase 2: accumulates canonicalized opening positions and
+  writes the opening-book binary — reuses `parseWtbFile`/`replayGame`, zero new WTHOR-reading
+  code), `synth-book <games> <seed> <maxPly> <minCount> <out.bin>` (the book's synth-dataset
+  equivalent). `.wtb` byte layout is documented in
   `tools/wthor_extractor/include/wthor_extractor/parser.hpp`; the dataset's sparse text format
   (self-describing `%`-header + `<score> <emptyCount> <shapeId:index>...` lines) is documented
-  in `dataset.hpp`.
+  in `dataset.hpp`; the opening-book binary format is documented in both `book.hpp` (the writer)
+  and `engine/include/reversi/opening_book.hpp` (the reader) — the two are independent
+  implementations of the same spec, deliberately, so tests can catch either one drifting from it.
 - **`tools/train_pattern_eval.py`** (Python venv at `tools/.venv/`, deps in
   `tools/requirements.txt`): reads one or more dataset files, fits ridge regression per
   game-phase bucket, writes a dependency-free binary weight file (format documented in the
@@ -71,14 +80,31 @@ added to this pipeline). Two pieces, deliberately different languages for differ
 **Pattern geometry (which squares make up each of the 12 pattern classes — lines, diagonals,
 edge+2X, corner blocks) lives once, in `engine/include/reversi/pattern.hpp`**, and both the C++
 extractor and the production `PatternEvaluator` call it — never redefine pattern shapes
-anywhere else.
+anywhere else. The same file also owns position/move canonicalization (`canonicalize()`,
+`Symmetry::inverse()`), which the opening book's build (`accumulateBookGame`) and lookup
+(`OpeningBook::lookup`) sides both depend on — build time stores `applySymmetry(symmetryUsed,
+move)` against the canonical position; lookup time recovers the real move via
+`applySymmetry(inverse(symmetryUsed), storedMove)`, the *opposite* direction, not the same
+symmetry applied twice. Getting this backwards is a silent, easy-to-miss bug (the same risk
+class as M5's FFO score-sign bug) — see `pattern.hpp`'s `canonicalize()` doc comment before
+touching either side of it.
 
 **Data**: the raw WTHOR database is never committed (no confirmed redistribution license from
-the FFO). Real trained weights are likewise never committed — they ship as release assets.
-`tests/data/dev_pattern_weights.bin` is the one exception: a small weight file trained purely
-on synthetic self-play (`synth-dataset`, not real WTHOR data) so the loading/lookup mechanism
-has a fast, routine, always-on test — it has no real playing strength and must never be treated
-as evidence of the real eval's quality (see `tests/data/README.md`).
+the FFO). Real trained weights and real opening books are likewise never committed — they ship
+as release assets. `tests/data/dev_pattern_weights.bin` and `tests/data/dev_opening_book.bin`
+are the exceptions: small fixtures trained/built purely on synthetic self-play (`synth-dataset`
+/ `synth-book`, not real WTHOR data) so the loading/lookup mechanisms have a fast, routine,
+always-on test — neither has real playing strength or opening-theory value and must never be
+treated as evidence of the real eval's/book's quality (see `tests/data/README.md`).
+
+**Move dispatch**: `engine/include/reversi/move_selector.hpp`'s `selectMove()` is the one
+shared composition point for "what move should be played here" — book lookup (if a book is
+configured and hits) → `solveExact()` (if `emptyCount() <= exactSolverEmptyThreshold`) →
+`searchTimed()`. `app/`'s `GameController` goes through this; if you're adding a new gameplay
+entry point (another CLI mode, a new GUI flow), route it through `selectMove()` rather than
+reimplementing this dispatch or calling `search()`/`solveExact()` directly — this was a real gap
+found and fixed in M6 Phase 2 (previously nothing centralized the endgame-vs-search decision at
+all).
 
 ## Testing policy
 

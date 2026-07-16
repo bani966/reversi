@@ -4,21 +4,31 @@ A Reversi/Othello desktop application: a bitboard engine in pure C++20 with alph
 search, a perfect-play endgame solver, a WTHOR-trained pattern evaluation with
 Multi-ProbCut, and a minimalist Qt 6 Widgets GUI with live engine analysis.
 
-**Status: M6 Phase 1 — WTHOR pattern evaluation complete; Phase 2 (opening book) not yet
-started.** Playable HvH/HvAI in the Qt GUI (M3), with the AI driven by iterative deepening + a
-transposition table + PVS + move ordering + aspiration windows on a wall-clock time budget
-(M4) — a measured, large self-play gain over M2's plain fixed-depth alpha-beta baseline
-(deterministic gate: depth-12 matured search vs. depth-10 baseline, 63–0). M5 added a
-perfect-play exact endgame solver that matches every published score in the vendored FFO
-endgame test subset exactly — see Benchmarks below. M6 Phase 1 replaces disc-differential with
-a pattern-based evaluation trained on real WTHOR tournament data (12 pattern shapes — lines,
-diagonals, edge+2X, corner blocks — ternary-encoded with symmetry-shared weight tables, fit via
-ridge regression per game-phase bucket): measured 20/20 in self-play against disc-differential
-at equal search depth, and the `.wtb` parser/replay pipeline it's built on has been stress-
-tested against 8,874 real tournament games (2016–2019) with zero illegal moves. `tools/`
-(gitignored raw data, generated weights ship as release assets — never committed) holds the
-extraction and training pipeline; see `tools/README.md`. Opening-book work (M6 Phase 2) has
-not started.
+**Status: M6 complete — WTHOR pattern evaluation and opening book both done.** Playable HvH/HvAI
+in the Qt GUI (M3), with the AI driven by iterative deepening + a transposition table + PVS +
+move ordering + aspiration windows on a wall-clock time budget (M4) — a measured, large
+self-play gain over M2's plain fixed-depth alpha-beta baseline (deterministic gate: depth-12
+matured search vs. depth-10 baseline, 63–0). M5 added a perfect-play exact endgame solver that
+matches every published score in the vendored FFO endgame test subset exactly — see Benchmarks
+below. M6 Phase 1 replaces disc-differential with a pattern-based evaluation trained on real
+WTHOR tournament data (12 pattern shapes — lines, diagonals, edge+2X, corner blocks —
+ternary-encoded with symmetry-shared weight tables, fit via ridge regression per game-phase
+bucket): measured 20/20 in self-play against disc-differential at equal search depth, and the
+`.wtb` parser/replay pipeline it's built on has been stress-tested against 8,874 real tournament
+games (2016–2019) with zero illegal moves. M6 Phase 2 adds a toggleable opening book
+(`OpeningBook`, off by default — no settings UI exposes it yet) built from canonicalized
+positions (symmetry-deduplicated, first ~20 plies) observed at least 5 times across a real
+WTHOR corpus; a book built from 8,886 real tournament games (1977, 2016–2019) produced 2,734
+entries and, spot-checked against known Othello opening theory, recovers exactly the documented
+main lines (e.g. 1.f5 d6, the Diagonal Opening; 1.f5 f6 e6, the Perpendicular Opening) —
+including a cross-check that a symmetric-equivalent real opening (1.c4) independently
+canonicalizes to and recovers the *same* underlying book entry as 1.f5, confirming the symmetry
+canonicalization is correct on real data, not just in unit tests. Also new in Phase 2:
+`selectMove()` (`engine/move_selector.hpp`), the book → exact-solver → heuristic-search dispatch
+that GUI gameplay now goes through — previously missing entirely (the GUI called the heuristic
+search directly, with no path to the exact solver at all). `tools/` (gitignored raw data,
+generated weights/books ship as release assets — never committed) holds the extraction,
+training, and book-building pipeline; see `tools/README.md`.
 
 ## Layout
 
@@ -62,7 +72,7 @@ ctest --preset ci-linux
 | M3 (done) | GUI MVP | Playable HvH/HvAI; engine on worker thread, cancelable |
 | M4 (done) | Search maturity | Iterative deepening, TT, PVS, ordering, time control; large self-play gain vs M2 |
 | M5 (done) | Endgame solver | FFO test positions solved with correct exact scores |
-| M6 | Pattern eval + opening book | WTHOR-trained eval beats hand eval at equal depth; full-DB replay passes |
+| M6 (done) | Pattern eval + opening book | WTHOR-trained eval beats hand eval at equal depth; full-DB replay passes |
 | M7 | Multi-ProbCut | Measured equal-time strength gain; toggle off by default |
 | M8 | Lazy SMP | ≥3× nps on 8 threads; TSan clean; no strength regression at equal time |
 | M9 | Feature complete | Undo/redo, save/load, import/export, settings, AI vs AI, analysis panel |
