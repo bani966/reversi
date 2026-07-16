@@ -27,6 +27,7 @@ add_executable(engine_tests
     engine/solver_tt_test.cpp
     engine/ffo_test.cpp
     engine/pattern_test.cpp
+    engine/pattern_eval_test.cpp
     engine/players_test.cpp
     engine/selfplay_test.cpp
     support/baseline_search.cpp

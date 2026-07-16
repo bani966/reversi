@@ -8,6 +8,7 @@ add_library(reversi_engine STATIC
     src/search.cpp
     src/solver.cpp
     src/pattern.cpp
+    src/pattern_eval.cpp
     src/players.cpp
     src/selfplay.cpp
 )

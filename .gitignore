@@ -8,6 +8,7 @@ CMakeUserPresets.json
 .vscode/
 .vs/
 .cache/
+.claude/
 *.user
 
 # Python (tools/)
