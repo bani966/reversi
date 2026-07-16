@@ -36,7 +36,11 @@ void printUsage() {
               << "      positions within the first max-ply real moves (default 20), and writes\n"
               << "      one book entry per canonical position observed at least min-count times\n"
               << "      (default 5) - the single most-played move, ties broken by average\n"
-              << "      outcome. See engine/include/reversi/opening_book.hpp for the reader.\n";
+              << "      outcome. See engine/include/reversi/opening_book.hpp for the reader.\n"
+              << "  wthor-extractor synth-book <numGames> <seed> <maxPly> <minCount> <out.bin>\n"
+              << "      Same accumulate/finalize/write pipeline as build-book, but sourced from\n"
+              << "      fixed-seed engine self-play instead of a .wtb file - used for the small\n"
+              << "      committed dev/test book fixture, same reasoning as synth-dataset.\n";
 }
 
 int runVerify(const char* wtbPath) {
@@ -117,6 +121,39 @@ int runSynthDataset(int numGames, unsigned seed, const char* outputPath) {
     }
     std::cout << numGames << " games self-played (seed " << seed << "), " << positionsWritten
               << " positions written\n";
+    return 0;
+}
+
+int runSynthBook(int numGames, unsigned seed, int maxPly, unsigned minCount,
+                 const char* outputPath) {
+    std::mt19937 rng(seed);
+    wthor::BookAccumulator acc;
+    for (int g = 0; g < numGames; ++g) {
+        wthor::GameRecord record;
+        reversi::Position pos = reversi::Position::start();
+        while (!reversi::isGameOver(pos)) {
+            if (!reversi::hasLegalMove(pos)) {
+                pos = reversi::applyPass(pos);
+                continue;
+            }
+            const int square = reversi::pickRandomMove(pos, rng);
+            record.moves.push_back(square);
+            pos = reversi::applyMove(pos, square);
+        }
+        const wthor::ReplayedGame replayed = wthor::replayGame(record);
+        wthor::accumulateBookGame(replayed, maxPly, acc);
+    }
+
+    const std::vector<wthor::BookEntry> entries = wthor::finalizeBook(acc, minCount);
+    std::ofstream out(outputPath, std::ios::binary);
+    if (!out) {
+        std::cerr << "cannot open output file: " << outputPath << "\n";
+        return 1;
+    }
+    wthor::writeBookFile(entries, out);
+    std::cout << numGames << " games self-played (seed " << seed << "), " << acc.size()
+              << " distinct canonical positions seen, " << entries.size()
+              << " book entries written\n";
     return 0;
 }
 
@@ -201,6 +238,11 @@ int main(int argc, char** argv) {
                 args.emplace_back(argv[i]);
             }
             return runBuildBook(args);
+        }
+        if (command == "synth-book" && argc >= 7) {
+            return runSynthBook(std::atoi(argv[2]), static_cast<unsigned>(std::atoi(argv[3])),
+                                std::atoi(argv[4]), static_cast<unsigned>(std::atoi(argv[5])),
+                                argv[6]);
         }
         printUsage();
         return 1;

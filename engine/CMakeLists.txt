@@ -9,6 +9,7 @@ add_library(reversi_engine STATIC
     src/solver.cpp
     src/pattern.cpp
     src/pattern_eval.cpp
+    src/opening_book.cpp
     src/players.cpp
     src/selfplay.cpp
 )

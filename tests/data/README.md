@@ -18,3 +18,14 @@
   (M6's exit criterion, `DISABLED_` by default per this project's convention for expensive
   milestone-gate tests) using real, fully-trained weights that are never committed either
   (ship as a release asset).
+- `dev_opening_book.bin` — the equivalent small dev/test fixture for the opening book (M6 Phase
+  2), same reasoning as `dev_pattern_weights.bin`: sourced entirely from fixed-seed engine
+  self-play, not real WTHOR data, so it never raises a WTHOR-redistribution question. Exists
+  only to exercise `OpeningBook`'s loading/lookup mechanism
+  (`tests/engine/opening_book_test.cpp`) — with only 200 self-played games behind it, it has no
+  real opening-theory value and must never be used as evidence of how good the real,
+  WTHOR-trained book is (that's M6 Phase 2 step 6's job, using a real, uncommitted book built
+  from real WTHOR data). Reproducible exactly via:
+  ```
+  build/msvc/tools/wthor_extractor/Release/wthor-extractor.exe synth-book 200 2027 20 5 tests/data/dev_opening_book.bin
+  ```
