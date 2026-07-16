@@ -4,17 +4,21 @@ A Reversi/Othello desktop application: a bitboard engine in pure C++20 with alph
 search, a perfect-play endgame solver, a WTHOR-trained pattern evaluation with
 Multi-ProbCut, and a minimalist Qt 6 Widgets GUI with live engine analysis.
 
-**Status: M5 — endgame solver complete.** Playable HvH/HvAI in the Qt GUI (M3), with the AI
-driven by iterative deepening + a transposition table + PVS + move ordering + aspiration
-windows on a wall-clock time budget (M4) — a measured, large self-play gain over M2's plain
-fixed-depth alpha-beta baseline (deterministic gate: depth-12 matured search vs. depth-10
-baseline, 63–0; wall-clock real-config comparison across three 10-game runs: 6/10, 8+/10,
-9/10, always a clear majority). M5 adds a perfect-play exact endgame solver (fastest-first +
-empty-region-parity move ordering, no heuristic eval at all near the end of the game) that
-matches every published score in the vendored FFO endgame test subset exactly — see
-Benchmarks below. Disc-differential remains the only evaluation function outside the exact
-endgame (a well-known weak Othello heuristic — it ignores mobility and positional control,
-e.g. corner/edge value); addressed at M6 (WTHOR-trained pattern evaluation).
+**Status: M6 Phase 1 — WTHOR pattern evaluation complete; Phase 2 (opening book) not yet
+started.** Playable HvH/HvAI in the Qt GUI (M3), with the AI driven by iterative deepening + a
+transposition table + PVS + move ordering + aspiration windows on a wall-clock time budget
+(M4) — a measured, large self-play gain over M2's plain fixed-depth alpha-beta baseline
+(deterministic gate: depth-12 matured search vs. depth-10 baseline, 63–0). M5 added a
+perfect-play exact endgame solver that matches every published score in the vendored FFO
+endgame test subset exactly — see Benchmarks below. M6 Phase 1 replaces disc-differential with
+a pattern-based evaluation trained on real WTHOR tournament data (12 pattern shapes — lines,
+diagonals, edge+2X, corner blocks — ternary-encoded with symmetry-shared weight tables, fit via
+ridge regression per game-phase bucket): measured 20/20 in self-play against disc-differential
+at equal search depth, and the `.wtb` parser/replay pipeline it's built on has been stress-
+tested against 8,874 real tournament games (2016–2019) with zero illegal moves. `tools/`
+(gitignored raw data, generated weights ship as release assets — never committed) holds the
+extraction and training pipeline; see `tools/README.md`. Opening-book work (M6 Phase 2) has
+not started.
 
 ## Layout
 
