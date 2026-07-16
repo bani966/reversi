@@ -8,8 +8,10 @@
 #include <QAction>
 #include <QCloseEvent>
 #include <QEvent>
+#include <QHBoxLayout>
 #include <QMenu>
 #include <QMenuBar>
+#include <QPalette>
 #include <QStatusBar>
 #include <QVBoxLayout>
 
@@ -93,8 +95,8 @@ QString buildChromeStyleSheet() {
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowFlags(windowFlags() | Qt::FramelessWindowHint);
     setWindowTitle(QStringLiteral("Reversi"));
-    resize(720,
-           796); // was 720x760; +36px to make room for the title bar replacing native decoration
+    resize(1020,
+           796); // was 720x796; +300px (M9 phase 1) to make room for the new side panel column
     setStyleSheet(buildChromeStyleSheet());
 
 #ifdef Q_OS_WIN
@@ -114,13 +116,38 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     board_ = new BoardWidget(this);
     statusBar_ = new QStatusBar(this);
 
+    // M9 phase 1: empty placeholder for the side panel phases 3-4 populate (analysis panel, move
+    // history, settings). An explicit background is a correctness fix, not decoration - every
+    // pixel of the window was previously covered by titleBar_/menuBar_/board_/statusBar_, so a
+    // bare QWidget's default (unpainted) background has never been exercised before; without
+    // this it would show through to Qt's default system palette, reading as a rendering bug next
+    // to the app's otherwise uniformly dark chrome. Reuses windowBackground - the same role
+    // titleBar_/menuBar_/statusBar_ already share - rather than introducing a new color.
+    panel_ = new QWidget(this);
+    panel_->setAutoFillBackground(true);
+    QPalette panelPalette = panel_->palette();
+    panelPalette.setColor(QPalette::Window, chrome::palette().windowBackground);
+    panel_->setPalette(panelPalette);
+    // A bare QWidget has no usable sizeHint() for layout purposes; without an explicit minimum
+    // the QHBoxLayout below would collapse it to zero width. 300px is a first-pass placeholder
+    // loosely sized on chess.com's own side-panel width - not load-bearing, revisited in phase 5.
+    panel_->setMinimumWidth(300);
+
+    // board_ keeps the stretch factor so it - not panel_ - absorbs extra space on resize,
+    // mirroring how board_ already gets stretch 1 vertically in the outer layout below.
+    auto* boardRow = new QHBoxLayout();
+    boardRow->setContentsMargins(0, 0, 0, 0);
+    boardRow->setSpacing(0);
+    boardRow->addWidget(board_, 1);
+    boardRow->addWidget(panel_);
+
     auto* container = new QWidget(this);
     auto* layout = new QVBoxLayout(container);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     layout->addWidget(titleBar_);
     layout->addWidget(menuBar_);
-    layout->addWidget(board_, 1);
+    layout->addLayout(boardRow, 1);
     layout->addWidget(statusBar_);
     setCentralWidget(container);
 

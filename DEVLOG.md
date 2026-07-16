@@ -527,3 +527,44 @@ fix), a conservative default t shipped with honest real numbers, and wired in of
 - M8 marked done in `README.md`'s roadmap table and status line - the engineering work is
   complete, tested, and CI-verified - but the status paragraph states the strength result exactly
   as measured (inconclusive at this sample size), not as a clean win or a confirmed regression.
+
+## M9 — Feature complete (in progress)
+
+M9 is the last major milestone before M10 polish/release, so unlike M7/M8 it carries no
+time-box: full attention, done in 5 reviewed phases with a checkpoint after each (layout, game
+data features, analysis panel, settings panel, visual parity pass).
+
+### Phase 1: layout restructuring for a side panel
+
+- Built: `MainWindow`'s board row is now a `QHBoxLayout` (`board_` at stretch 1, plus a new
+  `panel_` member - a currently-empty placeholder `QWidget` with a 300px minimum width) nested
+  inside the existing outer `QVBoxLayout`, in place of the old flat `addWidget(board_, 1)`.
+  Default window size grew from 720x796 to 1020x796 (+300px) to fit the new column. Title bar/
+  menu bar/status bar are unaffected - still full-width above and below the board row.
+- Interesting: the request's premise cited a prior design confirmation from "GameController's
+  author... months ago" as the basis for this change. Checked directly before writing the plan -
+  `GameController.hpp`/`.cpp` has zero references to a side panel, and neither does `DEVLOG.md`
+  (which didn't exist for most of the project's history anyway) or anywhere else in the repo; the
+  only trace is a one-line README roadmap entry. No such confirmation exists on record. The
+  underlying technical claim turned out to be true anyway, independently verified from the
+  current code: `BoardWidget` enforces its square aspect entirely by itself in
+  `resizeEvent()`/`recomputeBoardGeometry()` (`std::min(width(), height())` + letterboxing), with
+  no `heightForWidth()` override and no explicit `QSizePolicy` - since it only ever looks at its
+  own allocated rect, it doesn't care whether a `QVBoxLayout` or `QHBoxLayout` handed that rect
+  to it. So the plan proceeded as specified, just on verified grounds rather than a repo
+  precedent that doesn't actually exist - worth recording so this doesn't get cited as a real
+  precedent later.
+- Interesting (smaller): giving the empty placeholder panel real background styling (reusing
+  `chrome::palette().windowBackground`, the same role the title/menu/status bars already use)
+  turned out to be a correctness fix, not decoration - every pixel of the window was previously
+  covered by an existing widget, so a bare `QWidget`'s unpainted default background had never
+  been exercised before. Without it, the new panel would have shown Qt's default system palette
+  through, reading as a rendering bug next to the app's otherwise uniformly dark chrome.
+- Verified via screenshots at three window sizes (default 1020x796, wide 1400x900, narrow
+  820x650) plus a real click test: the board grows/shrinks and stays square at every size (the
+  specific thing this phase was asked to confirm, not assume), the panel holds its ~300px
+  minimum width without stretching, and clicking a legal move (d3) still correctly plays the
+  move and flips discs - confirming `GameController`'s existing signal/slot wiring is unaffected.
+  At the wider size, the board's own letterbox margin and the panel are visually indistinguishable
+  (same unstyled dark color, no border between them yet) - expected and out of scope until the
+  phase 5 visual parity pass adds real panel styling.

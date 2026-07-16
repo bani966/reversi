@@ -23,6 +23,7 @@ private:
     TitleBarWidget* titleBar_;
     QMenuBar* menuBar_;
     BoardWidget* board_;
+    QWidget* panel_; // M9 placeholder side panel - populated in phases 3-4
     QStatusBar* statusBar_;
     GameController* controller_;
 
