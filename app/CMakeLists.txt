@@ -16,6 +16,7 @@ qt_add_executable(reversi-app
     src/BoardWidget.cpp
     src/GameController.cpp
     src/GameNotation.cpp
+    src/SettingsDialog.cpp
     src/TitleBarWidget.cpp
     src/Palette.cpp
 )

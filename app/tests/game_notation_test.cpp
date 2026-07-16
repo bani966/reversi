@@ -22,6 +22,14 @@ TEST(SaveJson, RoundTripsModeMovesAndSettings) {
     EXPECT_TRUE(loaded->lastMoveHighlightEnabled);
 }
 
+TEST(SaveJson, RoundTripsAiVsAiMode) {
+    const QJsonObject json = notation::toSaveJson(GameMode::AiVsAi, {}, false);
+
+    const std::optional<notation::LoadedGame> loaded = notation::fromSaveJson(json);
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ(loaded->mode, GameMode::AiVsAi);
+}
+
 TEST(SaveJson, RoundTripsEmptyMoveListAndFalseSettings) {
     const QJsonObject json = notation::toSaveJson(GameMode::HumanVsHuman, {}, false);
     const std::optional<notation::LoadedGame> loaded = notation::fromSaveJson(json);

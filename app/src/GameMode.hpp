@@ -9,4 +9,5 @@ enum class GameMode {
     HumanVsHuman,
     HumanIsBlack,
     HumanIsWhite,
+    AiVsAi, // M9 phase 4: both sides driven by the AI, no human turn ever
 };

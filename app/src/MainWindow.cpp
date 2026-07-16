@@ -3,6 +3,7 @@
 #include "BoardWidget.hpp"
 #include "GameController.hpp"
 #include "Palette.hpp"
+#include "SettingsDialog.hpp"
 #include "TitleBarWidget.hpp"
 
 #include "reversi/analysis.hpp"
@@ -202,14 +203,27 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     panel_->setMinimumWidth(300);
 
     // board_ keeps the stretch factor so it - not panel_ - absorbs extra space on resize,
-    // mirroring how board_ already gets stretch 1 vertically in the outer layout below.
+    // mirroring how board_ already gets stretch 1 vertically in the outer layout below. Left
+    // margin matches panel_'s own internal layout margin (setupAnalysisPanel(), 12px) so the
+    // board's left edge sits the same distance from the window border as the panel's content
+    // does from the window's right border - without this, the board sat flush against the left
+    // edge while the panel's content had a visible 12px inset on the right, reading as unbalanced.
     auto* boardRow = new QHBoxLayout();
-    boardRow->setContentsMargins(0, 0, 0, 0);
+    boardRow->setContentsMargins(12, 0, 0, 0);
     boardRow->setSpacing(0);
     boardRow->addWidget(board_, 1);
     boardRow->addWidget(panel_);
 
     auto* container = new QWidget(this);
+    // Same correctness fix as panel_'s own background above, for the same reason: boardRow's new
+    // left margin exposes a strip of container's raw background for the first time (every pixel
+    // was previously covered by a child widget) - without this it would show Qt's default system
+    // palette instead of the app's chrome, and would silently drift out of sync with the rest of
+    // the chrome under a future theme change, unlike a color read from chrome::palette().
+    container->setAutoFillBackground(true);
+    QPalette containerPalette = container->palette();
+    containerPalette.setColor(QPalette::Window, chrome::palette().windowBackground);
+    container->setPalette(containerPalette);
     auto* layout = new QVBoxLayout(container);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -339,6 +353,20 @@ void MainWindow::createMenus() {
         }
     });
 
+    fileMenu->addSeparator();
+
+    // Settings (M9 phase 4): a fresh, non-modal SettingsDialog each time - simplest lifecycle,
+    // no need to keep an instance alive/hidden between openings. Non-modal so the user can keep
+    // playing/watching an AI-vs-AI game while adjusting settings (see SettingsDialog's own doc
+    // comment). Placed in &File rather than its own top-level menu - one less menu-bar entry,
+    // and clearer than a "Settings > Settings..." action stuttering its own menu's name.
+    QAction* openSettings = fileMenu->addAction(QStringLiteral("Settings..."));
+    connect(openSettings, &QAction::triggered, this, [this] {
+        auto* dialog = new SettingsDialog(controller_, this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->show();
+    });
+
     // Edit: undo/redo (M9 phase 2) - standard desktop placement, standard-key shortcuts so the
     // platform-correct binding (Ctrl+Y on Windows) is used automatically rather than hardcoded.
     QMenu* editMenu = menuBar_->addMenu(QStringLiteral("&Edit"));
@@ -351,7 +379,7 @@ void MainWindow::createMenus() {
     redo->setShortcut(QKeySequence::Redo);
     connect(redo, &QAction::triggered, this, [this] { controller_->redo(); });
 
-    // Game: unchanged from before M9 phase 2.
+    // Game: unchanged from before M9 phase 2, plus AI vs AI (M9 phase 4).
     QMenu* gameMenu = menuBar_->addMenu(QStringLiteral("&Game"));
 
     QAction* humanVsHuman = gameMenu->addAction(QStringLiteral("New Game: Human vs Human"));
@@ -367,6 +395,9 @@ void MainWindow::createMenus() {
         gameMenu->addAction(QStringLiteral("New Game: Human vs AI (You play White)"));
     connect(humanIsWhite, &QAction::triggered, this,
             [this] { controller_->newGame(GameMode::HumanIsWhite); });
+
+    QAction* aiVsAi = gameMenu->addAction(QStringLiteral("New Game: AI vs AI"));
+    connect(aiVsAi, &QAction::triggered, this, [this] { controller_->newGame(GameMode::AiVsAi); });
 }
 
 // M9 phase 3: panel_'s first real content - "Analyze Position" triggers on-demand MultiPV

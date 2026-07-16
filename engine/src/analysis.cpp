@@ -46,8 +46,8 @@ std::vector<RankedMove> analyzeTopMoves(const Position& p, int maxLines, int max
     return results;
 }
 
-std::vector<int> extractPrincipalVariation(const Position& p, int firstMove,
-                                           TranspositionTable& tt, int maxLength) {
+std::vector<int> extractPrincipalVariation(const Position& p, int firstMove, TranspositionTable& tt,
+                                           int maxLength) {
     std::vector<int> pv;
     if (maxLength <= 0) {
         return pv;

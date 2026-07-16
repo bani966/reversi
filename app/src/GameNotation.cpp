@@ -14,6 +14,8 @@ QString modeToString(GameMode mode) {
         return QStringLiteral("HumanIsBlack");
     case GameMode::HumanIsWhite:
         return QStringLiteral("HumanIsWhite");
+    case GameMode::AiVsAi:
+        return QStringLiteral("AiVsAi");
     }
     return QStringLiteral("HumanVsHuman"); // unreachable
 }
@@ -27,6 +29,9 @@ std::optional<GameMode> modeFromString(const QString& s) {
     }
     if (s == QStringLiteral("HumanIsWhite")) {
         return GameMode::HumanIsWhite;
+    }
+    if (s == QStringLiteral("AiVsAi")) {
+        return GameMode::AiVsAi;
     }
     return std::nullopt;
 }

@@ -706,3 +706,64 @@ data features, analysis panel, settings panel, visual parity pass).
   found the three real bugs this entry describes - a reminder that the automated suite and manual
   verification catch genuinely different failure classes here, same as M8's Lazy SMP strength
   investigation.
+
+### Phase 4: settings dialog (AI vs AI, toggles, opening book/MPC loading, tuning)
+
+- Built: `GameMode::AiVsAi` (both sides AI-driven - `isHumanTurnFor()` returns false
+  unconditionally; `finalizeTurn()`'s existing `if (!isGameOver && !isHumanTurn()) startAiSearch();`
+  already chained AI moves back-to-back with zero further changes, confirmed structurally correct
+  by exploration before writing any code); a real loading path for `book_`/`mpcModel_`
+  (`loadOpeningBook`/`loadMpcModel`, wrapping `OpeningBook`/`MpcModel`'s throwing constructors into
+  this class's usual `bool` + `lastErrorMessage()` file-operation convention) plus
+  `setOpeningBookEnabled`/`setMpcEnabled` toggles; `aiMaxSearchDepth_`/`aiTimeBudget_`/
+  `exactSolverEmptyThreshold_` as real `GameController` members (previously compile-time constants,
+  or in the threshold's case, an existing `MoveSelectorConfig` field `GameController` never
+  populated at all) with getters/setters. `SettingsDialog` (new `QDialog` - the first one in this
+  app; no prior `QTabWidget`/`QDialog` precedent existed anywhere) with Board/Opening Book/
+  Multi-ProbCut/AI Strength `QGroupBox` sections, every control applying live (no OK/Apply/Cancel),
+  non-modal (`show()`, not `exec()`) so the user can keep watching an AI-vs-AI game while adjusting
+  settings.
+- Scope confirmed with the user before implementation: settings live behind a menu action, not
+  tabs inside `panel_` (kept the analysis panel's placeholder simple, no visual overhaul this
+  phase); Lazy SMP thread count stayed out of scope entirely - `GameController` doesn't use
+  `searchLazySmp` at all today (only single-threaded `selectMove()`/`searchTimed()`), and wiring it
+  up would mean switching `tt_`/`solverTt_` to the concurrent-safe `SharedTranspositionTable`, a
+  real architecture change, not a settings field. Nothing here persists across app restarts or
+  saves into a game's JSON - session-level AI configuration, not per-game state, unlike
+  `lastMoveHighlightEnabled_` (which already does both).
+- Interesting bug caught before it ever reached the UI (found while re-reading the diff, not by a
+  test or manual click): the first draft of `analyzePosition()`'s worker-thread lambda read
+  `aiMaxSearchDepth_`/`aiTimeBudget_` directly off `this` at execution time on the analysis
+  thread - fine as long as nothing else could change them mid-search, but the whole point of this
+  phase is a live Settings dialog that can. Reading a plain (non-atomic) member from one thread
+  while the GUI thread's setter could be writing it at the same moment is a real data race, not
+  just an ambiguity about which value wins. Fixed by snapshotting both into local `const` copies
+  before spawning the thread and capturing those instead - exactly the same reasoning
+  `startAiSearch()`'s own `config` (captured by value) already relies on, just not yet applied
+  to `analyzePosition()`'s two newly-configurable values.
+- Menu placement revised after a first pass shipped it as its own top-level `&Settings` menu: on
+  review this read as "Settings > Settings..." stuttering its own menu's name for one action, and
+  added a fourth top-level menu for a single item. Moved into `&File` instead (after Import
+  Position, its own separator) - one less menu-bar entry, clearer, and consistent with `&File`
+  already being the catch-all for the app's other dialog-triggering actions (save/load/import/
+  export).
+- Real layout bug caught by the user, not by me, immediately after a follow-up visual tweak: asked
+  to pad the board's left edge to visually match the panel's own internal right margin (so the
+  board/panel pair reads as centered rather than the board sitting flush against the window's left
+  edge), the first fix simply added a left `QHBoxLayout` margin - which exposed a strip of the
+  window's `container` widget background for the first time (every pixel of `container` had
+  always been covered by a child widget before this margin existed), and `container` had never
+  been given explicit background styling, unlike `titleBar_`/`menuBar_`/`statusBar_`/`panel_` -
+  exactly the same "unstyled QWidget shows Qt's default system palette" failure phase 1's own
+  DEVLOG entry already named, reintroduced by accident via a margin instead of an uncovered
+  widget. Fixed the same way phase 1 fixed it for `panel_`: `setAutoFillBackground(true)` +
+  `chrome::palette().windowBackground`, not a hardcoded color - keeps this new fill in sync with
+  every other chrome surface automatically if a future theme pass changes what that function
+  returns, rather than becoming a fourth place a theme color could drift out of sync.
+- Verified: 204/204 automated tests green (1 new: `GameNotation`'s `AiVsAi` mode round-trip, fully
+  QApplication-free per this file's existing convention). Manual GUI verification (handed to the
+  user partway through, per their request) covered: AI vs AI playing unattended to completion with
+  the analyze button correctly disabled throughout; the last-move highlight toggle applying
+  immediately; both `tests/data/dev_opening_book.bin` and `dev_mpc_model.bin` loading successfully
+  with their status labels/checkboxes updating correctly and a subsequent AI move still completing
+  normally with both active simultaneously.

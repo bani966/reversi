@@ -4,6 +4,8 @@
 
 #include "reversi/eval.hpp"
 #include "reversi/moves.hpp"
+#include "reversi/mpc.hpp"
+#include "reversi/opening_book.hpp"
 
 #include <QFile>
 #include <QIODevice>
@@ -11,22 +13,17 @@
 #include <QJsonParseError>
 #include <QMetaObject>
 
+#include <filesystem>
+#include <stdexcept>
 #include <utility>
 
 namespace {
-// M4: the AI thinks on a wall-clock budget via iterative deepening rather than a fixed
-// depth - consistent response time for the user regardless of game phase, and much deeper
-// search than M2's fixed depth 10 in the same time. The depth cap is a safety net for
-// trivially-solvable late endgames, not the usual stopping reason.
-constexpr int kAiMaxSearchDepth = 24;
-constexpr reversi::TimeBudget kAiTimeBudget{std::chrono::milliseconds{800},
-                                            std::chrono::milliseconds{2500}};
 // 2^20 entries (~24 MB). Reused across the AI's moves within one game (cleared on newGame):
 // entries from earlier searches stay valid - keys are full positions, stored depths are
 // remaining-depth - and pre-warm both cutoffs and move ordering for later searches.
 constexpr std::size_t kTranspositionTableEntries = std::size_t{1} << 20;
 // M9 phase 3: PV length cap for the analysis panel's top line - long enough to show a real
-// continuation, short enough that a shallow analysis depth (kAiMaxSearchDepth aside, a per-line
+// continuation, short enough that a shallow analysis depth (aiMaxSearchDepth_ aside, a per-line
 // budget can still land at a modest completed depth) doesn't display a misleadingly long line
 // propped up by TT entries left over from unrelated exploration.
 constexpr int kMaxPvLength = 10;
@@ -55,6 +52,8 @@ bool GameController::isHumanTurnFor(bool blackToMove) const {
         return blackToMove;
     case GameMode::HumanIsWhite:
         return !blackToMove;
+    case GameMode::AiVsAi:
+        return false;
     }
     return true; // unreachable
 }
@@ -98,6 +97,76 @@ void GameController::cancelAnalysis() {
         analysisThread_.join();
     }
     analysisInFlight_ = false;
+}
+
+void GameController::setAiMaxSearchDepth(int depth) {
+    cancelAiSearch();
+    cancelAnalysis();
+    aiMaxSearchDepth_ = depth;
+}
+
+void GameController::setAiTimeBudget(int softMs, int hardMs) {
+    cancelAiSearch();
+    cancelAnalysis();
+    aiTimeBudget_ =
+        reversi::TimeBudget{std::chrono::milliseconds{softMs}, std::chrono::milliseconds{hardMs}};
+}
+
+void GameController::setExactSolverEmptyThreshold(int threshold) {
+    cancelAiSearch();
+    cancelAnalysis();
+    exactSolverEmptyThreshold_ = threshold;
+}
+
+void GameController::setOpeningBookEnabled(bool enabled) {
+    if (!hasOpeningBook()) {
+        return; // nothing loaded to enable
+    }
+    cancelAiSearch();
+    cancelAnalysis();
+    book_ = enabled ? ownedBook_.get() : nullptr;
+}
+
+bool GameController::loadOpeningBook(const QString& filePath) {
+    cancelAiSearch(); // join-before-mutate: ownedBook_ is about to be destroyed and replaced,
+    cancelAnalysis(); // and a worker thread could still be reading through book_'s old value
+    try {
+        auto book =
+            std::make_unique<reversi::OpeningBook>(std::filesystem::path(filePath.toStdString()));
+        ownedBook_ = std::move(book);
+        book_ = ownedBook_.get(); // loading it is why you loaded it: enable immediately
+        return true;
+    } catch (const std::runtime_error& e) {
+        // OpeningBook's constructor throws rather than returning bool/optional (opening_book.hpp)
+        // - this is the one place that convention needs bridging into this class's usual
+        // bool+lastErrorMessage() file-operation contract.
+        lastErrorMessage_ = QStringLiteral("Could not load opening book: %1").arg(e.what());
+        return false;
+    }
+}
+
+void GameController::setMpcEnabled(bool enabled) {
+    if (!hasMpcModel()) {
+        return; // nothing loaded to enable
+    }
+    cancelAiSearch();
+    cancelAnalysis();
+    mpcModel_ = enabled ? ownedMpcModel_.get() : nullptr;
+}
+
+bool GameController::loadMpcModel(const QString& filePath) {
+    cancelAiSearch();
+    cancelAnalysis();
+    try {
+        auto model =
+            std::make_unique<reversi::MpcModel>(std::filesystem::path(filePath.toStdString()));
+        ownedMpcModel_ = std::move(model);
+        mpcModel_ = ownedMpcModel_.get();
+        return true;
+    } catch (const std::runtime_error& e) {
+        lastErrorMessage_ = QStringLiteral("Could not load MPC model: %1").arg(e.what());
+        return false;
+    }
 }
 
 void GameController::onSquareClicked(int square) {
@@ -166,16 +235,20 @@ void GameController::startAiSearch() {
 
     // tt_/solverTt_ are captured raw: the worker only touches them while running, and every
     // path that mutates or destroys them (newGame, destructor) joins the worker via
-    // cancelAiSearch first. book_/mpcModel_ have no mutator yet (see GameController.hpp), so
-    // there is nothing to race on there either - a future loading path must preserve this same
-    // join-before-mutate discipline.
+    // cancelAiSearch first. config.book/config.mpcModel below are snapshotted BY VALUE into
+    // `config` (which the lambda then captures by value too) - a subsequent
+    // setOpeningBookEnabled()/setMpcEnabled() toggle can't race with this, but
+    // loadOpeningBook()/loadMpcModel() replacing (destroying) the owned object book_/mpcModel_
+    // point at absolutely could, if they didn't also join first - see those functions' own
+    // "join-before-mutate" comments.
     reversi::TranspositionTable* const tt = tt_.get();
     reversi::TranspositionTable* const solverTt = solverTt_.get();
     reversi::MoveSelectorConfig config;
     config.book = book_;
-    config.maxDepth = kAiMaxSearchDepth;
-    config.budget = kAiTimeBudget;
+    config.maxDepth = aiMaxSearchDepth_;
+    config.budget = aiTimeBudget_;
     config.mpcModel = mpcModel_;
+    config.exactSolverEmptyThreshold = exactSolverEmptyThreshold_;
     aiThread_ = std::thread([this, posCopy, myGeneration, cancellationCopy, config, tt, solverTt] {
         const reversi::SearchResult result =
             reversi::selectMove(posCopy, reversi::evaluateDiscDifferential, config,
@@ -211,31 +284,38 @@ void GameController::analyzePosition(int maxLines) {
     const bool blackToMoveCopy = blackToMove_; // so onAnalysisFinished can convert the (mover-
                                                // relative) score to the panel's fixed White/Black
                                                // display convention - see the header's doc comment
+    // Snapshotted here (not read directly from `this` inside the thread lambda below) for the
+    // same reason startAiSearch()'s `config` is captured by value: the Settings dialog can change
+    // these live on the GUI thread while this worker is running, and reading `this->...` directly
+    // from another thread mid-search would be a real data race, not just a "which value did it
+    // use" ambiguity.
+    const int maxDepthCopy = aiMaxSearchDepth_;
+    const reversi::TimeBudget budgetCopy = aiTimeBudget_;
 
     // analysisTt_ is captured raw: the worker only touches it while running, and every path that
     // mutates or destroys it (cancelAnalysis, the destructor) joins the worker first - the exact
     // same "join-before-mutate" discipline startAiSearch()'s own comment describes for tt_/
     // solverTt_.
     reversi::TranspositionTable* const tt = analysisTt_.get();
-    analysisThread_ =
-        std::thread([this, posCopy, myGeneration, cancellationCopy, maxLines, tt, blackToMoveCopy] {
-            const std::vector<reversi::RankedMove> lines = reversi::analyzeTopMoves(
-                posCopy, maxLines, kAiMaxSearchDepth, kAiTimeBudget,
-                reversi::evaluateDiscDifferential, cancellationCopy.get(), tt);
-            // The PV is only ever extracted for the top-ranked line - a chess-analysis-UI
-            // convention, and each additional line's PV would need its own walk from a different
-            // child position (see analysis.hpp's own doc comment on extractPrincipalVariation).
-            std::vector<int> pv;
-            if (!lines.empty()) {
-                pv = reversi::extractPrincipalVariation(posCopy, lines[0].move, *tt, kMaxPvLength);
-            }
-            QMetaObject::invokeMethod(
-                this,
-                [this, lines, pv, blackToMoveCopy, myGeneration] {
-                    onAnalysisFinished(lines, pv, blackToMoveCopy, myGeneration);
-                },
-                Qt::QueuedConnection);
-        });
+    analysisThread_ = std::thread([this, posCopy, myGeneration, cancellationCopy, maxLines, tt,
+                                   blackToMoveCopy, maxDepthCopy, budgetCopy] {
+        const std::vector<reversi::RankedMove> lines =
+            reversi::analyzeTopMoves(posCopy, maxLines, maxDepthCopy, budgetCopy,
+                                     reversi::evaluateDiscDifferential, cancellationCopy.get(), tt);
+        // The PV is only ever extracted for the top-ranked line - a chess-analysis-UI
+        // convention, and each additional line's PV would need its own walk from a different
+        // child position (see analysis.hpp's own doc comment on extractPrincipalVariation).
+        std::vector<int> pv;
+        if (!lines.empty()) {
+            pv = reversi::extractPrincipalVariation(posCopy, lines[0].move, *tt, kMaxPvLength);
+        }
+        QMetaObject::invokeMethod(
+            this,
+            [this, lines, pv, blackToMoveCopy, myGeneration] {
+                onAnalysisFinished(lines, pv, blackToMoveCopy, myGeneration);
+            },
+            Qt::QueuedConnection);
+    });
 }
 
 void GameController::onAnalysisFinished(std::vector<reversi::RankedMove> lines, std::vector<int> pv,

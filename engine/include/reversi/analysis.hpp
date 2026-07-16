@@ -74,7 +74,7 @@ std::vector<RankedMove> analyzeTopMoves(const Position& p, int maxLines, int max
 // correct entries regardless of which pass ran last at the root.
 //
 // Precondition: firstMove is a legal move of p.
-std::vector<int> extractPrincipalVariation(const Position& p, int firstMove,
-                                           TranspositionTable& tt, int maxLength);
+std::vector<int> extractPrincipalVariation(const Position& p, int firstMove, TranspositionTable& tt,
+                                           int maxLength);
 
 } // namespace reversi

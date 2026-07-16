@@ -59,10 +59,9 @@ TEST(AnalyzeTopMoves, NoDuplicateMovesAcrossRanks) {
 TEST(AnalyzeTopMoves, MaxLinesGreaterThanLegalMoveCountReturnsExactlyLegalMoveCount) {
     // The start position has exactly 4 legal moves - request far more than that.
     TranspositionTable tt(std::size_t{1} << 12);
-    const std::vector<RankedMove> lines = analyzeTopMoves(
-        Position::start(), 20, 4, kQuickBudget, evaluateDiscDifferential, nullptr, &tt);
-    EXPECT_EQ(lines.size(),
-             static_cast<std::size_t>(std::popcount(legalMoves(Position::start()))));
+    const std::vector<RankedMove> lines = analyzeTopMoves(Position::start(), 20, 4, kQuickBudget,
+                                                          evaluateDiscDifferential, nullptr, &tt);
+    EXPECT_EQ(lines.size(), static_cast<std::size_t>(std::popcount(legalMoves(Position::start()))));
 }
 
 TEST(ExtractPrincipalVariation, EveryMoveIsLegalInTheReplayedPosition) {

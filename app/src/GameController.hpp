@@ -8,10 +8,12 @@
 #include "reversi/move_selector.hpp"
 #include "reversi/position.hpp"
 #include "reversi/search.hpp"
+#include "reversi/solver.hpp"
 
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -87,6 +89,40 @@ public:
     // reasoning cancelAiSearch() already applies to the AI's own search.
     void cancelAnalysis();
 
+    // M9 phase 4: real settings surface for control points that previously existed but had no
+    // UI (book_/mpcModel_ below, "control point exists, default off"), plus a getter for
+    // lastMoveHighlightEnabled_ (so a freshly opened Settings dialog can initialize its checkbox
+    // to the current state - a loaded save file may have already turned this on). Every setter/
+    // loader here calls cancelAiSearch()/cancelAnalysis() first, mirroring startAiSearch()'s own
+    // "cancel defensively" discipline - required for the load functions (replacing the pointed-to
+    // object while a worker thread might still be reading through the old pointer would be a real
+    // use-after-free), applied uniformly to the plain-value setters too for consistency. None of
+    // these are persisted across app restarts or saved into a game's JSON - session-level AI
+    // configuration, not per-game state (unlike lastMoveHighlightEnabled_, which already is).
+    bool lastMoveHighlightEnabled() const { return lastMoveHighlightEnabled_; }
+
+    int aiMaxSearchDepth() const { return aiMaxSearchDepth_; }
+    void setAiMaxSearchDepth(int depth);
+    reversi::TimeBudget aiTimeBudget() const { return aiTimeBudget_; }
+    void setAiTimeBudget(int softMs, int hardMs);
+    int exactSolverEmptyThreshold() const { return exactSolverEmptyThreshold_; }
+    void setExactSolverEmptyThreshold(int threshold);
+
+    bool hasOpeningBook() const { return ownedBook_ != nullptr; }
+    bool openingBookEnabled() const { return book_ != nullptr; }
+    void setOpeningBookEnabled(bool enabled);
+    // Loads a real OpeningBook from `filePath`, replacing any previously loaded one and enabling
+    // it immediately. Returns false (and sets lastErrorMessage()) if the file can't be parsed -
+    // wraps OpeningBook's own throwing constructor (opening_book.hpp) into this class's usual
+    // bool+lastErrorMessage() file-operation convention.
+    bool loadOpeningBook(const QString& filePath);
+
+    bool hasMpcModel() const { return ownedMpcModel_ != nullptr; }
+    bool mpcEnabled() const { return mpcModel_ != nullptr; }
+    void setMpcEnabled(bool enabled);
+    // Same shape as loadOpeningBook(), for MpcModel (mpc.hpp).
+    bool loadMpcModel(const QString& filePath);
+
 public slots:
     void onSquareClicked(int square);
 
@@ -144,14 +180,28 @@ private:
     // move_selector.hpp / solver.hpp's doc comments on why sharing one table between the solver
     // and heuristic search would silently corrupt the solver's exactness).
     std::unique_ptr<reversi::TranspositionTable> solverTt_;
-    // Off by default: no loading path exists yet to construct a real OpeningBook (that's a
-    // later step), so this is a structural control point only - mirrors
-    // lastMoveHighlightEnabled_'s "control point exists, default off" pattern. Non-owning: this
-    // object never constructs or destroys an OpeningBook itself.
+    // Non-owning: book_/mpcModel_ never construct or destroy anything themselves - they just
+    // point at ownedBook_/ownedMpcModel_ (below) once loadOpeningBook()/loadMpcModel() succeeds,
+    // or nullptr (the default, and also what setOpeningBookEnabled(false)/setMpcEnabled(false)
+    // restore) to disable. Off by default until the M9 phase 4 Settings dialog loads something.
     const reversi::OpeningBook* book_ = nullptr;
-    // Off by default: no loading path exists yet to construct a real MpcModel (M7) - same
-    // structural "control point exists, default off" pattern as book_ above. Non-owning.
     const reversi::MpcModel* mpcModel_ = nullptr;
+    // M9 phase 4: actually owns whatever loadOpeningBook()/loadMpcModel() last successfully
+    // constructed - book_/mpcModel_ above are never reassigned to point anywhere else. Replaced
+    // wholesale by a new load (never mutated in place), always after cancelAiSearch()/
+    // cancelAnalysis() so no worker thread can still be reading through the pointer being
+    // replaced.
+    std::unique_ptr<reversi::OpeningBook> ownedBook_;
+    std::unique_ptr<reversi::MpcModel> ownedMpcModel_;
+    // M9 phase 4: previously compile-time constants (kAiMaxSearchDepth/kAiTimeBudget) in
+    // GameController.cpp - now user-configurable via the Settings dialog, defaulted to the exact
+    // same values. exactSolverEmptyThreshold_ populates MoveSelectorConfig's field of the same
+    // name (move_selector.hpp), which startAiSearch() never set before this phase (silently
+    // falling back to solver.hpp's own compile-time default every time).
+    int aiMaxSearchDepth_ = 24;
+    reversi::TimeBudget aiTimeBudget_{std::chrono::milliseconds{800},
+                                      std::chrono::milliseconds{2500}};
+    int exactSolverEmptyThreshold_ = reversi::kExactSolverEmptyThreshold;
     std::shared_ptr<reversi::CancellationToken> cancellation_;
     // Bumped on every new search and every cancellation, so a result that arrives after being
     // superseded (by a new search or a new game) can be recognized as stale and discarded even
