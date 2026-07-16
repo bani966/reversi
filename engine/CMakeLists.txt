@@ -10,6 +10,7 @@ add_library(reversi_engine STATIC
     src/pattern.cpp
     src/pattern_eval.cpp
     src/opening_book.cpp
+    src/move_selector.cpp
     src/players.cpp
     src/selfplay.cpp
 )
