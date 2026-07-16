@@ -36,6 +36,7 @@ add_executable(engine_tests
     engine/mpc_search_test.cpp
     engine/exit_criterion_m6_test.cpp
     engine/exit_criterion_m7_test.cpp
+    engine/exit_criterion_m8_test.cpp
     engine/players_test.cpp
     engine/selfplay_test.cpp
     support/baseline_search.cpp

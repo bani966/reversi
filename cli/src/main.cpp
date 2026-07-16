@@ -41,8 +41,12 @@ void printUsage() {
         << "  version                        Print version\n"
         << "  start                          Print the initial position (toolchain smoke test)\n"
         << "  perft <depth>                  Print node counts for depths 1..<depth>\n"
-        << "  bench <depth>                  Fixed-depth search from the start position:\n"
-        << "                                 best move, score, nodes, elapsed time, nps\n"
+        << "  bench <depth> [threads]        Fixed-depth search from the start position:\n"
+        << "                                 best move, score, nodes, elapsed time, nps.\n"
+        << "                                 threads > 1 uses Lazy SMP (searchLazySmp) with a\n"
+        << "                                 generous time budget so it still runs to exactly\n"
+        << "                                 <depth>, not whatever a budget allows (default 1,\n"
+        << "                                 identical to today's plain search())\n"
         << "  selfplay <a> <b> [games=100]   Play a match between two players and tally\n"
         << "                                 wins/losses/draws. Player specs: random, greedy,\n"
         << "                                 search:<depth>\n"
@@ -119,18 +123,43 @@ int main(int argc, char** argv) {
     if (cmd == "bench") {
         const std::optional<int> depth = parsePositiveArg(argc, argv, 2);
         if (!depth) {
-            std::cerr << "Usage: reversi-cli bench <depth>\n";
+            std::cerr << "Usage: reversi-cli bench <depth> [threads]\n";
             return 1;
         }
+        int threads = 1;
+        if (argc >= 4) {
+            const std::optional<int> parsedThreads = parsePositiveArg(argc, argv, 3);
+            if (!parsedThreads) {
+                std::cerr << "Usage: reversi-cli bench <depth> [threads]\n";
+                return 1;
+            }
+            threads = *parsedThreads;
+        }
+
         const reversi::Position start = reversi::Position::start();
         const auto t0 = std::chrono::steady_clock::now();
-        const reversi::SearchResult result = reversi::search(start, *depth);
+        reversi::SearchResult result;
+        std::unique_ptr<reversi::SharedTranspositionTable> sharedTt;
+        if (threads <= 1) {
+            result = reversi::search(start, *depth);
+        } else {
+            // A generous, effectively-unbounded budget: bench's own contract is a fixed-DEPTH
+            // benchmark, so even though searchLazySmp is fundamentally time-budgeted, this keeps
+            // every thread running to exactly <depth> rather than whatever a real budget allows.
+            constexpr reversi::TimeBudget kUnboundedBudget{std::chrono::hours{1},
+                                                           std::chrono::hours{2}};
+            sharedTt = std::make_unique<reversi::SharedTranspositionTable>(std::size_t{1} << 20);
+            result =
+                reversi::searchLazySmp(start, *depth, kUnboundedBudget, threads,
+                                       reversi::evaluateDiscDifferential, nullptr, sharedTt.get());
+        }
         const auto t1 = std::chrono::steady_clock::now();
         const double seconds = std::chrono::duration<double>(t1 - t0).count();
         const std::uint64_t nps =
             seconds > 0.0 ? static_cast<std::uint64_t>(static_cast<double>(result.nodes) / seconds)
                           : result.nodes;
         std::cout << "depth: " << *depth << "\n"
+                  << "threads: " << threads << "\n"
                   << "best move: " << reversi::squareToString(result.bestMove) << "\n"
                   << "score: " << result.score << "\n"
                   << "nodes: " << result.nodes << "\n"

@@ -398,3 +398,32 @@ fix), a conservative default t shipped with honest real numbers, and wired in of
   the sum across all threads (not just thread 0's) - all green, plus a manual GUI smoke check
   confirming `app/`'s build/link still works with `engine/` now depending on `Threads::Threads`
   directly.
+
+### Step 3: cli bench thread-count arg + DISABLED_ExitCriterionM8
+
+- Built: `cli bench <depth> [threads]` - `threads` defaults to 1 (byte-identical to the pre-M8
+  `search()` call it already made); `threads > 1` switches to `searchLazySmp()` with a generous
+  (1h/2h) time budget so `bench` keeps its existing fixed-DEPTH contract rather than becoming
+  time-budgeted. This is what step 4's real nps-scaling measurement will drive. New
+  `DISABLED_ExitCriterionM8` test (`exit_criterion_m8_test.cpp`), same convention as every
+  earlier milestone's expensive gate test: equal-TIME (not equal-depth) self-play, Lazy SMP at
+  8 threads vs. single-threaded, `REVERSI_M8_GAMES` override for fast local iteration, defaults
+  to 20 games.
+- Interesting finding, investigated rather than dismissed: a quick 2-game manual run of the new
+  test showed Lazy SMP losing 0-2, which would contradict "no strength regression at equal
+  time." Rather than accept a 2-game sample or wave it off as noise, built a throwaway
+  diagnostic comparing `searchTimed()` (solo) against `searchLazySmp()` (8 threads) under an
+  *identical* wall-clock budget (800ms/2500ms) on the start position, 3 trials: solo
+  consistently reached depth 14 (2-10M nodes), lazy8 consistently reached depth 15 (22-35M
+  nodes) - confirming the mechanism is working exactly as designed, reaching a genuinely deeper
+  effective search in the same time. The differing scores at those different depths (-2 vs 3)
+  is expected eval variance between different search depths, not corruption - same-depth score
+  identity is what `search_lazy_smp_test.cpp`'s unit tests already prove rigorously, and that
+  invariant held throughout. A follow-up 6-game manual run trended to 3-3. Conclusion: small-
+  sample noise around real parity, not a regression - but this is provisional; the real 20-game
+  `DISABLED_ExitCriterionM8` run (step 4) is what actually settles it, and the honest result
+  gets reported either way.
+- Flagged improve later: `bench`'s `threads > 1` path allocates a fresh 1M-entry
+  `SharedTranspositionTable` per invocation rather than letting the caller size/reuse it - fine
+  for a CLI benchmarking tool, would need revisiting if `searchLazySmp` ever got a persistent-TT
+  caller.
