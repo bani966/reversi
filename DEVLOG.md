@@ -27,6 +27,23 @@ guide later, not the guide itself.
   and a deliberately modest sample size given this measured rate, rather than assuming a nice
   round number would be cheap enough.
 
+### Step 2: tools/mpc_fitter `fit` subcommand
+
+- Built: `readDataset` (parses the header/lines `generate` writes), `fitPairs` (closed-form
+  single-predictor OLS + sample-stddev residual sigma per (shallow,deep) pair, skipping
+  missing-depth/too-few-samples/zero-variance pairs with a warning instead of erroring), and
+  `writeModelFile` (the binary MpcModel format engine/mpc.hpp will read in step 3). `fit
+  <dataset.txt> <reduction> <minDeep> <maxDeep> <out.bin>` ties it together.
+- Interesting test-design note (not a bug, a discipline point): the "noisy data" fit test
+  computes its expected a/b/sigma with the OLS formula written out a second time, independently,
+  directly in the test file - not by calling fitPairs and checking it against itself. Same
+  independent-recomputation discipline already used for every binary reader in this project
+  (OpeningBook, PatternEvaluator), applied here to a piece of MATH rather than a file format.
+- Smoke-tested generate+fit end to end on a tiny real sample (3 games, depths 2-6): recovered
+  b in [0.86, 0.89] and sigma of a few discs across three depth pairs - directionally sane
+  (shallower search should predict deeper search fairly well, deep search isn't literally
+  identical to shallow so sigma isn't ~0) before trusting the mechanism for the real step-5 run.
+
 ## M0 — Scaffolding, CI
 
 - Built: repo layout (engine/cli/app/tests/tools), CMake presets, CI on Windows/macOS/Linux.

@@ -3,6 +3,7 @@
 # external data source here (unlike wthor_extractor), so both steps live in one tool.
 add_library(mpc_fitter_lib STATIC
     src/dataset.cpp
+    src/fit.cpp
 )
 target_include_directories(mpc_fitter_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(mpc_fitter_lib PUBLIC reversi::engine)
@@ -22,6 +23,7 @@ FetchContent_MakeAvailable(googletest)
 
 add_executable(mpc_fitter_tests
     tests/dataset_test.cpp
+    tests/fit_test.cpp
 )
 target_link_libraries(mpc_fitter_tests PRIVATE mpc_fitter_lib reversi::engine
                                                GTest::gtest_main reversi_warnings)

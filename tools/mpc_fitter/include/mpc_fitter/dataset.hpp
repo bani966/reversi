@@ -2,6 +2,7 @@
 
 #include "reversi/position.hpp"
 
+#include <istream>
 #include <ostream>
 #include <vector>
 
@@ -21,5 +22,20 @@ void writeDatasetHeader(const std::vector<int>& depths, std::ostream& out);
 // comment, added in step 3, for why a mismatched eval silently miscalibrates the cut margins).
 void writeDatasetLine(const reversi::Position& pos, const std::vector<int>& depths,
                       std::ostream& out);
+
+// A parsed dataset: `depths[i]` names the depth `rows[r][i]` (every row's r-th column) was
+// searched at - the exact inverse of writeDatasetHeader/writeDatasetLine above, reading back
+// only what the header actually declares rather than assuming any fixed depth list.
+struct Dataset {
+    std::vector<int> depths;
+    std::vector<std::vector<int>> rows; // rows[r].size() == depths.size() for every r
+};
+
+// Parses a dataset written by writeDatasetHeader + writeDatasetLine. Throws std::runtime_error
+// if the header's `% depths:` line is missing/malformed, or if any data row's token count
+// doesn't match the header's depth count (a strong structural check, same discipline as
+// tools/wthor_extractor's parseWtbFile size check - catches a truncated/mismatched file
+// immediately rather than silently misaligning columns).
+Dataset readDataset(std::istream& in);
 
 } // namespace mpc_fitter
