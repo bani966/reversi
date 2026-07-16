@@ -58,7 +58,7 @@ jobs:
         run: ctest --preset ci-linux
 
   sanitize:
-    # ASan + UBSan over the full test suite. A TSan job joins this at M8 (Lazy SMP).
+    # ASan + UBSan over the full test suite.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,3 +68,20 @@ jobs:
         run: cmake --build --preset ci-linux-sanitize --parallel
       - name: Test
         run: ctest --preset ci-linux-sanitize
+
+  tsan:
+    # ThreadSanitizer, separate from the sanitize job above since ASan/UBSan and TSan can't be
+    # combined in one binary. Added at M8 (Lazy SMP): this is the first genuinely concurrent
+    # shared-mutable-state code in the project (SharedTranspositionTable, engine/shared_tt.hpp)
+    # - this job is the actual authority on data-race freedom, not the local concurrent stress
+    # test (tests/engine/shared_tt_test.cpp), which is inherently a "didn't observe a failure"
+    # style check.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset ci-linux-tsan
+      - name: Build
+        run: cmake --build --preset ci-linux-tsan --parallel
+      - name: Test
+        run: ctest --preset ci-linux-tsan

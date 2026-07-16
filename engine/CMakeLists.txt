@@ -5,6 +5,7 @@ add_library(reversi_engine STATIC
     src/perft.cpp
     src/eval.cpp
     src/tt.cpp
+    src/shared_tt.cpp
     src/search.cpp
     src/solver.cpp
     src/pattern.cpp

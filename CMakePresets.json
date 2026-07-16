@@ -42,13 +42,24 @@
                 "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
                 "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
             }
+        },
+        {
+            "name": "ci-linux-tsan",
+            "inherits": "ci-linux",
+            "binaryDir": "${sourceDir}/build/tsan",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread"
+            }
         }
     ],
     "buildPresets": [
         { "name": "ci-windows", "configurePreset": "ci-windows", "configuration": "Release" },
         { "name": "ci-macos", "configurePreset": "ci-macos" },
         { "name": "ci-linux", "configurePreset": "ci-linux" },
-        { "name": "ci-linux-sanitize", "configurePreset": "ci-linux-sanitize" }
+        { "name": "ci-linux-sanitize", "configurePreset": "ci-linux-sanitize" },
+        { "name": "ci-linux-tsan", "configurePreset": "ci-linux-tsan" }
     ],
     "testPresets": [
         {
@@ -70,6 +81,11 @@
         {
             "name": "ci-linux-sanitize",
             "configurePreset": "ci-linux-sanitize",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ci-linux-tsan",
+            "configurePreset": "ci-linux-tsan",
             "output": { "outputOnFailure": true }
         }
     ]

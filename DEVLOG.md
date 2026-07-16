@@ -314,3 +314,47 @@ guide later, not the guide itself.
 
 M7 complete: Multi-ProbCut implemented, validated (including one real negative finding and its
 fix), a conservative default t shipped with honest real numbers, and wired in off by default.
+
+## M8 — Lazy SMP
+
+### Step 1: SharedTranspositionTable + tests + TSan CI job
+
+- Built: `engine/include/reversi/shared_tt.hpp` + `.cpp`, `SharedTranspositionTable` - a
+  genuinely new class (not a retrofit of `TranspositionTable`, which stays completely
+  untouched, still used unsynchronized by every existing single-threaded caller). Packed-atomic
+  entries: `TTEntry` is exactly 16 bytes (two u64 words), so each slot stores `data` (packed
+  score/depth/bound/bestMove) and `keyXorData` (`key XOR data`) as two separate
+  `std::atomic<uint64_t>` words, all loads/stores at `memory_order_relaxed`. `probe()` XORs the
+  two words back together and rejects the entry (safe miss) unless the result matches the
+  queried key - this single check handles a genuine miss and a torn/interleaved read
+  identically, with the same negligible false-positive probability as an ordinary 64-bit hash
+  collision (a risk class already accepted everywhere Zobrist hashing is used in this project).
+  Added a new `tsan` CI job + `ci-linux-tsan` preset (mirrors `ci-linux-sanitize`'s structure;
+  a separate job since ASan/UBSan and TSan can't be combined in one binary).
+- Interesting decision (the actual design fork this step hinged on): keeping
+  `TranspositionTable`'s existing pointer-returning `probe()` API for the single-threaded case
+  wasn't just conservative, it was closer to necessary - handing out a raw pointer into memory
+  another thread can concurrently overwrite is a real time-of-check/time-of-use gap even when
+  the writes themselves are individually safe. A genuinely concurrent-safe probe has to return
+  a validated COPY, which is a different contract, so `SharedTranspositionTable` had to be a
+  different type rather than a modification of the existing one - which turned out to make the
+  "existing tests pass unmodified" requirement trivially true for this step (zero existing
+  files touched at all, only new additive ones).
+- Interesting test-design problem and its resolution: a real concurrent stress test can't
+  reliably reproduce a torn read on demand (races are timing-dependent and may never manifest
+  locally, which is exactly why TSan-in-CI exists as the real authority). To get a
+  *deterministic* test of the checksum-rejection path specifically, added a small, clearly-
+  labeled test-only method (`debugWriteRawWordsForTesting`) that writes raw, possibly-
+  inconsistent words directly into a slot, bypassing `store()`'s normal packing - lets a test
+  construct the exact byte-for-byte scenario a real torn read would produce (one real store's
+  `keyXorData` mixed with a different real store's `data`) and confirm `probe()` rejects it,
+  with certainty rather than luck. Same justification precedent as `solver.hpp`'s
+  `oddParitySquares` being exposed specifically so an easy-to-get-wrong piece of logic gets a
+  direct test independent of the rest of the class's behavior.
+- The real concurrent stress test (8 threads, 20000 iterations each, hammering `store()`/
+  `probe()` on one shared table using the real benchmark position set) passed cleanly, but its
+  own doc comment states plainly that this is inherently a "didn't observe a failure" style
+  test - it raises confidence but cannot prove the absence of races. Ran it 5 additional times
+  locally for extra confidence; the actual authority is the new `tsan` CI job, verified by
+  pushing (the one piece of this step's verification that can't be done on this Windows
+  dev machine at all - no local GCC/Clang/TSan toolchain).

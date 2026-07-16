@@ -19,6 +19,7 @@ add_executable(engine_tests
     engine/search_test.cpp
     engine/search_iterative_test.cpp
     engine/tt_test.cpp
+    engine/shared_tt_test.cpp
     engine/ordering_test.cpp
     engine/aspiration_test.cpp
     engine/exit_criterion_m4_test.cpp
@@ -44,7 +45,12 @@ add_executable(engine_tests
     support/naive_reference.cpp
     support/search_checks.cpp
 )
-target_link_libraries(engine_tests PRIVATE reversi::engine GTest::gtest_main reversi_warnings)
+# SharedTranspositionTable's concurrent stress test (shared_tt_test.cpp) spawns std::thread
+# directly - Threads::Threads is the portable way to get pthread linked in on Linux/macOS too
+# (same reasoning as app/CMakeLists.txt's own comment on GameController's worker thread).
+find_package(Threads REQUIRED)
+target_link_libraries(engine_tests PRIVATE reversi::engine GTest::gtest_main Threads::Threads
+                                           reversi_warnings)
 # Absolute path to tests/data, baked in at configure time so ffo_test.cpp can locate the
 # vendored FFO data file regardless of ctest's working directory (which varies by generator/
 # platform, unlike the source tree layout).
