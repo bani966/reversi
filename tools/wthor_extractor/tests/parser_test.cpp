@@ -47,10 +47,10 @@ TEST(DecodeWthorMoveByte, OutOfRangeRowOrColumnReturnsNullopt) {
 TEST(MoverRelativeFinalScore, SignFlipsWithMoverColor) {
     EXPECT_EQ(moverRelativeFinalScore(/*posMoverIsBlack=*/true, /*finalBlack=*/40,
                                       /*finalWhite=*/24),
-             16);
+              16);
     EXPECT_EQ(moverRelativeFinalScore(/*posMoverIsBlack=*/false, /*finalBlack=*/40,
                                       /*finalWhite=*/24),
-             -16);
+              -16);
 }
 
 TEST(MoverRelativeFinalScore, DrawIsZeroRegardlessOfMoverColor) {
@@ -94,7 +94,8 @@ std::filesystem::path writeSyntheticWtbFile(const std::filesystem::path& path) {
     }
 
     std::ofstream out(path, std::ios::binary);
-    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    out.write(reinterpret_cast<const char*>(bytes.data()),
+              static_cast<std::streamsize>(bytes.size()));
     return path;
 }
 
@@ -126,7 +127,7 @@ TEST(ParseWtbFile, ThrowsOnSizeMismatch) {
         std::ofstream out(path, std::ios::binary);
         const std::vector<std::uint8_t> tooShort(16 + 68 - 1, 0); // one byte short
         out.write(reinterpret_cast<const char*>(tooShort.data()),
-                 static_cast<std::streamsize>(tooShort.size()));
+                  static_cast<std::streamsize>(tooShort.size()));
     }
     EXPECT_THROW(parseWtbFile(path), std::runtime_error);
     std::filesystem::remove(path);

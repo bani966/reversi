@@ -7,6 +7,7 @@ add_library(reversi_engine STATIC
     src/tt.cpp
     src/search.cpp
     src/solver.cpp
+    src/pattern.cpp
     src/players.cpp
     src/selfplay.cpp
 )

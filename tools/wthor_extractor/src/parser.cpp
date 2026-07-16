@@ -14,8 +14,7 @@ constexpr std::size_t kMovesPerRecord = 60;
 constexpr std::size_t kRecordSize = 8 + kMovesPerRecord; // fixed fields + move bytes
 
 unsigned readU16LE(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
-    return static_cast<unsigned>(bytes[offset]) |
-          (static_cast<unsigned>(bytes[offset + 1]) << 8U);
+    return static_cast<unsigned>(bytes[offset]) | (static_cast<unsigned>(bytes[offset + 1]) << 8U);
 }
 
 } // namespace
@@ -44,7 +43,8 @@ std::vector<GameRecord> parseWtbFile(const std::filesystem::path& path) {
     }
 
     const unsigned recordCount = readU16LE(bytes, 4);
-    const std::size_t expectedSize = kHeaderSize + static_cast<std::size_t>(recordCount) * kRecordSize;
+    const std::size_t expectedSize =
+        kHeaderSize + static_cast<std::size_t>(recordCount) * kRecordSize;
     if (bytes.size() != expectedSize) {
         throw std::runtime_error("WTHOR file size mismatch for " + path.string() + ": expected " +
                                  std::to_string(expectedSize) + " bytes (16-byte header + " +
