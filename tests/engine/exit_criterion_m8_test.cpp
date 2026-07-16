@@ -22,7 +22,7 @@ namespace {
 // (search_lazy_smp_test.cpp) exist separately for that; this is specifically about strength.
 //
 // Run on demand:
-//   build/msvc/tests/Release/engine_tests.exe --gtest_filter=*ExitCriterionM8* \
+//   build/msvc/tests/Release/engine_tests.exe --gtest_filter=*ExitCriterionM8*
 //     --gtest_also_run_disabled_tests
 // Optionally override game count for faster iteration: REVERSI_M8_GAMES=<n>
 //
