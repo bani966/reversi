@@ -27,9 +27,25 @@ constexpr int kCornerRadius = 6;
 // windowBackground/coordinateTextColor/lastMoveHighlightColor come from the shared
 // chrome::palette() (also used by MainWindow's menu/status/title bar) so they can't drift out
 // of sync; the rest are board-specific (felt green, disc fills, grid lines) and have no other
-// consumer, so they stay local. M9's theme toggle will turn this into a swappable light/dark
-// pair instead of a fixed constant; nothing below needs to change except where these values
-// come from.
+// consumer, so they stay local.
+//
+// M10 phase 3 (revised after live testing): boardColor/gridLineColor DO now vary by theme - the
+// original plan for this phase kept them constant, reasoning that chess.com's own board color is
+// independent of site light/dark mode. In practice, seeing the dark theme's felt green next to a
+// bright white light-theme surround made a case for revisiting that: the same deep, slightly mossy
+// green that reads as rich against near-black chrome reads as a flat, disconnected dark patch
+// against bright white. The light variant is a brighter, fresher green instead - not a full
+// reinvention, still clearly "the same board," just tuned to complement its surround the way the
+// dark variant already was tuned for its own. Disc colors and the legal-move-highlight stay
+// constant either way (they read fine against both greens); only the felt and its gridlines change.
+//
+// This function must NOT cache its own return value across calls, regardless of which fields
+// change with theme - an earlier version returned a function-local `static const BoardPalette`,
+// which read chrome::palette() (and now ThemeManager's current theme) correctly once, then
+// silently kept serving that first-read snapshot forever - invisible with a single fixed theme,
+// but a real stale-color bug the instant a runtime theme switch existed. Recomputing a plain
+// BoardPalette value on every call (cheap - a handful of QColor literals, only ever called once
+// per paintEvent) is what actually keeps this correct.
 struct BoardPalette {
     QColor windowBackground; // letterbox color when the widget isn't square
     QColor boardColor;
@@ -43,18 +59,20 @@ struct BoardPalette {
     QColor lastMoveHighlightColor;
 };
 
-const BoardPalette& boardPalette() {
+BoardPalette boardPalette() {
     // Continuous-field Othello board (not a checkerboard of alternating squares - this is
-    // Othello, not chess), but tuned to chess.com's actual green board identity: boardColor is
-    // chess.com's own dark-square green (#769656), not an invented felt tone. Gridlines darkened
-    // to a mossy green-black rather than near-white, since a near-white line read as intended
-    // contrast against the old darker/more desaturated green but washes out against this lighter,
-    // more saturated one. Off-white/near-black discs (not pure #fff/#000) each with a subtle
-    // border for definition, unchanged.
-    static const BoardPalette kPalette{
+    // Othello, not chess). Dark theme's boardColor is chess.com's own dark-square green (#769656),
+    // not an invented felt tone; the light theme's is a brighter, fresher green tuned to complement
+    // a bright white surround instead (see the doc comment above) - gridlines follow the same
+    // reasoning in each case: dark and mossy for contrast against the dark theme's deeper green,
+    // a touch lighter for the light theme's brighter one so they still read as fine inlaid lines
+    // rather than heavy divider bars. Off-white/near-black discs (not pure #fff/#000) each with a
+    // subtle border for definition, and the legal-move-highlight, stay constant across both.
+    const bool isDark = chrome::ThemeManager::instance().currentTheme() == chrome::Theme::Dark;
+    return BoardPalette{
         .windowBackground = chrome::palette().windowBackground,
-        .boardColor = QColor(118, 150, 86),
-        .gridLineColor = QColor(40, 66, 40, 90),
+        .boardColor = isDark ? QColor(118, 150, 86) : QColor(139, 178, 98),
+        .gridLineColor = isDark ? QColor(40, 66, 40, 90) : QColor(60, 92, 56, 90),
         .coordinateTextColor = chrome::palette().textColor,
         .blackDiscFill = QColor(26, 26, 28),
         .blackDiscBorder = QColor(58, 58, 62),
@@ -63,7 +81,6 @@ const BoardPalette& boardPalette() {
         .legalMoveHighlightColor = QColor(255, 255, 255, 70),
         .lastMoveHighlightColor = chrome::palette().lastMoveHighlightColor,
     };
-    return kPalette;
 }
 } // namespace
 
@@ -82,6 +99,12 @@ BoardWidget::BoardWidget(QWidget* parent) : QWidget(parent) {
         flipProgress_ = value.toDouble();
         update();
     });
+
+    // M10 phase 3: paintEvent() already reads boardPalette() (and therefore chrome::palette())
+    // fresh on every call, so a repaint alone is enough to pick up a theme switch - no cached
+    // state here to invalidate.
+    connect(&chrome::ThemeManager::instance(), &chrome::ThemeManager::themeChanged, this,
+            [this] { update(); });
 }
 
 void BoardWidget::setDisplayState(const DisplayState& state) {
@@ -160,7 +183,7 @@ void BoardWidget::mousePressEvent(QMouseEvent* event) {
 }
 
 void BoardWidget::paintEvent(QPaintEvent*) {
-    const BoardPalette& theme = boardPalette();
+    const BoardPalette theme = boardPalette();
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);

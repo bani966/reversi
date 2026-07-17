@@ -11,9 +11,66 @@
 #include <QGroupBox>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPalette>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
+
+#ifdef Q_OS_WIN
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <dwmapi.h>
+#include <windows.h>
+#endif
+
+namespace {
+#ifdef Q_OS_WIN
+// M10 phase 3: unlike MainWindow, this dialog has no custom frameless title bar (a much bigger
+// lift - drag-to-move, corner rounding, hand-drawn minimize/maximize/close buttons - not
+// attempted for a settings dialog) - its native OS title bar is otherwise completely outside Qt's
+// styling reach and stays dark regardless of chrome::palette()'s own theme.
+// DWMWA_USE_IMMERSIVE_DARK_MODE is the smaller, targeted fix: it picks which of DWM's two native
+// title-bar renderings to use, independent of the user's own Windows-wide dark/light setting -
+// toggled to follow THIS app's theme instead.
+void applyTitleBarDarkMode(QWidget* window, bool dark) {
+    const auto hwnd = reinterpret_cast<HWND>(window->winId());
+    const BOOL useDarkMode = dark ? TRUE : FALSE;
+    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode, sizeof(useDarkMode));
+}
+#endif
+
+// M10 phase 3 (second attempt - the QSS-only fix didn't hold up in practice): QGroupBox::title's
+// `color` QSS property doesn't reliably override Fusion's own title-paint color no matter how it's
+// specified (tried both on ::title alone and duplicated onto the outer QGroupBox selector) - the
+// title kept rendering in the same near-white tone as the light theme's own background. Setting
+// QPalette::WindowText directly is what Fusion's group-box title painter actually reads from, so
+// this bypasses the QSS cascade for this one specific piece of chrome entirely rather than trying
+// a third QSS variant. findChildren(), not a stored list of the five QGroupBoxes, so any future
+// section added to this dialog is covered automatically.
+void applyGroupBoxTextColor(QWidget* dialog) {
+    const QColor textColor = chrome::palette().textColor;
+    for (QGroupBox* box : dialog->findChildren<QGroupBox*>()) {
+        QPalette boxPalette = box->palette();
+        boxPalette.setColor(QPalette::WindowText, textColor);
+        box->setPalette(boxPalette);
+    }
+}
+
+// M10 phase 3: chrome::panelControlsStyleSheet() styles this dialog's CHILDREN (QGroupBox,
+// QPushButton, ...) but was never given a rule for the dialog's own base QWidget background - the
+// space between/around the group boxes was left at Qt's own unstyled default the whole time, which
+// doesn't track chrome::palette() at all. Invisible-by-accident in the dark theme (an unstyled
+// default that happens to also read dark), impossible to miss in the light theme (a dark strip
+// behind the now-correctly-dark group-box titles, right back to the same "text blends with its own
+// background" problem those titles just got fixed for). Same setAutoFillBackground()+QPalette
+// pattern MainWindow.cpp's own `container` widget already uses for exactly this reason.
+void applyDialogBackground(QWidget* dialog) {
+    dialog->setAutoFillBackground(true);
+    QPalette dialogPalette = dialog->palette();
+    dialogPalette.setColor(QPalette::Window, chrome::palette().windowBackground);
+    dialog->setPalette(dialogPalette);
+}
+} // namespace
 
 SettingsDialog::SettingsDialog(GameController* controller, QWidget* parent)
     : QDialog(parent), controller_(controller) {
@@ -22,8 +79,26 @@ SettingsDialog::SettingsDialog(GameController* controller, QWidget* parent)
     // stylesheet panel_ uses (MainWindow.cpp), so this dialog's QGroupBox/QCheckBox/QPushButton/
     // QSpinBox/QLabel controls can't drift out of sync with the rest of the app's chrome.
     setStyleSheet(chrome::panelControlsStyleSheet());
+    applyDialogBackground(this);
+#ifdef Q_OS_WIN
+    applyTitleBarDarkMode(this,
+                          chrome::ThemeManager::instance().currentTheme() == chrome::Theme::Dark);
+#endif
 
     auto* layout = new QVBoxLayout(this);
+
+    // Appearance (M10 phase 3)
+    auto* appearanceGroup = new QGroupBox(QStringLiteral("Appearance"), this);
+    auto* appearanceLayout = new QVBoxLayout(appearanceGroup);
+    auto* lightThemeCheck = new QCheckBox(QStringLiteral("Light theme"), appearanceGroup);
+    lightThemeCheck->setChecked(chrome::ThemeManager::instance().currentTheme() ==
+                                chrome::Theme::Light);
+    connect(lightThemeCheck, &QCheckBox::toggled, this, [](bool checked) {
+        chrome::ThemeManager::instance().setTheme(checked ? chrome::Theme::Light
+                                                          : chrome::Theme::Dark);
+    });
+    appearanceLayout->addWidget(lightThemeCheck);
+    layout->addWidget(appearanceGroup);
 
     // Board
     auto* boardGroup = new QGroupBox(QStringLiteral("Board"), this);
@@ -117,6 +192,25 @@ SettingsDialog::SettingsDialog(GameController* controller, QWidget* parent)
     auto* closeButton = new QPushButton(QStringLiteral("Close"), this);
     connect(closeButton, &QPushButton::clicked, this, &SettingsDialog::close);
     layout->addWidget(closeButton);
+
+    // All five QGroupBoxes exist past this point - see applyGroupBoxTextColor()'s own comment for
+    // why this can't be QSS alone.
+    applyGroupBoxTextColor(this);
+
+    // M10 phase 3: this dialog is non-modal (MainWindow calls show(), not exec() - see the class's
+    // own doc comment) and could be left open across a theme switch triggered from its own
+    // checkbox above - re-apply the shared stylesheet (and, on Windows, the native title bar's
+    // dark-mode attribute, and the dialog's own background, and the group-box title color)
+    // immediately rather than waiting for it to be closed and reopened.
+    connect(&chrome::ThemeManager::instance(), &chrome::ThemeManager::themeChanged, this,
+            [this](chrome::Theme newTheme) {
+                setStyleSheet(chrome::panelControlsStyleSheet());
+                applyDialogBackground(this);
+                applyGroupBoxTextColor(this);
+#ifdef Q_OS_WIN
+                applyTitleBarDarkMode(this, newTheme == chrome::Theme::Dark);
+#endif
+            });
 }
 
 void SettingsDialog::loadOpeningBook() {

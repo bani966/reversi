@@ -28,6 +28,11 @@ public:
 protected:
     void closeEvent(QCloseEvent* event) override;
     void changeEvent(QEvent* event) override;
+    // M10: frameless windows (Qt::FramelessWindowHint) lose the OS's own resize-border
+    // hit-testing along with the rest of the native frame - this restores it on Windows by
+    // answering WM_NCHITTEST directly (see MainWindow.cpp's own doc comment on the
+    // implementation). A no-op passthrough to the base class on any other platform.
+    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
 
 private:
     TitleBarWidget* titleBar_;
@@ -51,6 +56,14 @@ private:
     // so analysisPane_ is now a stored member (previously setupAnalysisPanel()'s return value was
     // only ever handed straight to the QSplitter and never needed again).
     QWidget* analysisPane_;
+    // M10 phase 3: the move-history pane needs to be reachable outside setupMoveHistoryPanel() too
+    // - refreshTheme() re-applies its stylesheet on a theme switch, the same reason analysisPane_
+    // is already a member rather than a local.
+    QFrame* moveHistoryPane_;
+    // M10 phase 3: same reasoning - the toolbar's "Analysis" toggle bakes chrome::palette() colors
+    // into its own stylesheet directly (not just inherited from panel_'s cascade), so it needs its
+    // own re-application on theme change too.
+    QPushButton* analysisToggleButton_;
     QPushButton* analyzeButton_;
     QLabel* analysisStatusLabel_;
     // M9 phase 5: MultiPV results rebuilt from a single QPlainTextEdit text block into real
@@ -78,6 +91,14 @@ private:
     QWidget* setupPanelToolbar();
     void updateMoveHistoryList();
     void updateAnalyzeButtonEnabled();
+    // M10 phase 3: re-applies every chrome::palette()-derived stylesheet/QPalette this class owns
+    // (the window's own chrome QSS, centralWidget()'s QPalette, panel_, the move-history/analysis
+    // panes, the toolbar toggle) and refreshes moveHistoryList_'s current-row color - called once
+    // from the constructor's chrome::ThemeManager::themeChanged connection, never at construction
+    // time itself (each setup function already applies its own correct initial style once).
+    // BoardWidget/TitleBarWidget/SettingsDialog each own their own equivalent independently rather
+    // than being reached into from here - see their own themeChanged connections.
+    void refreshTheme();
     void renderAnalysisResults(const std::vector<reversi::RankedMove>& lines,
                                const std::vector<int>& pv, bool blackToMove);
     // One "card" per ranked move: rank badge, move, score on the top line; a dimmer depth/nodes

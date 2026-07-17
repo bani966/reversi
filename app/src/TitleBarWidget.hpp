@@ -35,4 +35,10 @@ private:
     QPushButton* minimizeButton_;
     QPushButton* maximizeButton_;
     QPushButton* closeButton_;
+
+    // M10 phase 3: applies every chrome::palette()-derived style here (background, title text,
+    // button hover colors) - called once at the end of construction and again on every
+    // chrome::ThemeManager::themeChanged, so this is the single place "how this widget looks"
+    // lives, not duplicated between an initial construction pass and a separate refresh path.
+    void refreshTheme();
 };

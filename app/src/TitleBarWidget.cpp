@@ -16,7 +16,10 @@ constexpr int kButtonWidth = 46;
 
 // Windows 11's own close-button hover red - matching the platform convention rather than
 // reusing the generic panel-hover gray, since "close" is the one button worth visually
-// distinguishing before you click it.
+// distinguishing before you click it. M10 phase 3's theme audit found this as the one color in
+// app/ that doesn't come from chrome::Palette - deliberately: the close button stays this same
+// red in both light and dark theme (matching Windows/macOS's own platform convention, which
+// doesn't invert it either), so there was no real light/dark pair to add here.
 const QColor kCloseHoverColor(196, 43, 28);
 
 struct IconSet {
@@ -48,36 +51,33 @@ const IconSet& iconSet() {
     return kIconSet;
 }
 
-QPushButton* makeButton(const QString& glyph, QWidget* parent, const QColor& hoverColor) {
+QPushButton* makeButton(const QString& glyph, QWidget* parent) {
     auto* button = new QPushButton(glyph, parent);
     button->setFixedSize(kButtonWidth, kTitleBarHeight);
     button->setFlat(true);
     button->setFocusPolicy(Qt::NoFocus);
-    const chrome::Palette& theme = chrome::palette();
-    const QString family =
-        iconSet().fontFamily.isEmpty() ? QStringLiteral("Segoe UI") : iconSet().fontFamily;
-    button->setStyleSheet(QStringLiteral("QPushButton { background: transparent; color: %1; "
-                                         "border: none; font-family: '%2'; font-size: 10px; } "
-                                         "QPushButton:hover { background-color: %3; }")
-                              .arg(theme.textColor.name(), family, hoverColor.name()));
     return button;
+}
+
+// M10 phase 3: factored out of TitleBarWidget::refreshTheme() so button styling has exactly one
+// definition, called for all three buttons (minimize/maximize share theme.panelHover;
+// closeButton_ passes kCloseHoverColor instead - see that constant's own doc comment).
+QString buttonStyleSheet(const QString& fontFamily, const QColor& hoverColor) {
+    const chrome::Palette& theme = chrome::palette();
+    return QStringLiteral("QPushButton { background: transparent; color: %1; "
+                          "border: none; font-family: '%2'; font-size: 10px; } "
+                          "QPushButton:hover { background-color: %3; }")
+        .arg(theme.textColor.name(), fontFamily, hoverColor.name());
 }
 } // namespace
 
 TitleBarWidget::TitleBarWidget(QWidget* parent) : QWidget(parent) {
-    const chrome::Palette& theme = chrome::palette();
     setFixedHeight(kTitleBarHeight);
-    setStyleSheet(QStringLiteral("TitleBarWidget { background-color: %1; }")
-                      .arg(theme.windowBackground.name()));
 
     titleLabel_ = new QLabel(this);
-    titleLabel_->setStyleSheet(
-        QStringLiteral("color: %1; font-family: 'Segoe UI'; font-weight: 500; padding-left: 10px;")
-            .arg(theme.textColor.name()));
-
-    minimizeButton_ = makeButton(iconSet().minimize, this, theme.panelHover);
-    maximizeButton_ = makeButton(iconSet().maximize, this, theme.panelHover);
-    closeButton_ = makeButton(iconSet().close, this, kCloseHoverColor);
+    minimizeButton_ = makeButton(iconSet().minimize, this);
+    maximizeButton_ = makeButton(iconSet().maximize, this);
+    closeButton_ = makeButton(iconSet().close, this);
 
     connect(minimizeButton_, &QPushButton::clicked, this, &TitleBarWidget::minimizeRequested);
     connect(maximizeButton_, &QPushButton::clicked, this,
@@ -92,6 +92,27 @@ TitleBarWidget::TitleBarWidget(QWidget* parent) : QWidget(parent) {
     layout->addWidget(minimizeButton_);
     layout->addWidget(maximizeButton_);
     layout->addWidget(closeButton_);
+
+    // Applies every style once, now that titleLabel_/the three buttons all exist - and again on
+    // every future theme switch, so this is the one place "how this widget looks" lives.
+    refreshTheme();
+    connect(&chrome::ThemeManager::instance(), &chrome::ThemeManager::themeChanged, this,
+            [this] { refreshTheme(); });
+}
+
+void TitleBarWidget::refreshTheme() {
+    const chrome::Palette& theme = chrome::palette();
+    setStyleSheet(QStringLiteral("TitleBarWidget { background-color: %1; }")
+                      .arg(theme.windowBackground.name()));
+    titleLabel_->setStyleSheet(
+        QStringLiteral("color: %1; font-family: 'Segoe UI'; font-weight: 500; padding-left: 10px;")
+            .arg(theme.textColor.name()));
+
+    const QString family =
+        iconSet().fontFamily.isEmpty() ? QStringLiteral("Segoe UI") : iconSet().fontFamily;
+    minimizeButton_->setStyleSheet(buttonStyleSheet(family, theme.panelHover));
+    maximizeButton_->setStyleSheet(buttonStyleSheet(family, theme.panelHover));
+    closeButton_->setStyleSheet(buttonStyleSheet(family, kCloseHoverColor));
 }
 
 void TitleBarWidget::setTitle(const QString& title) {

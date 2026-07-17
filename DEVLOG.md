@@ -940,3 +940,102 @@ sound, themes, installers, v1.0) is next.
   verification for "does a sound play," same reasoning `tests/data/README.md` already applies to
   fixtures with no automatable correctness signal). Manually confirmed working end-to-end by the
   user after the `qrc:` → filesystem-path fix and the MP3 → WAV format switch.
+
+### Phase 3: light/dark theme toggle
+
+This phase was framed up front as a direct test of `Palette.hpp`'s own design: has routing every
+chrome color through one shared source since M3 actually made a second theme cheap to add, or did
+something slip through as a literal along the way? Answer, honestly, both ways: the *mechanism*
+(`chrome::Theme`, `ThemeManager`, a second palette, every existing call site picking it up for
+free) was genuinely small. Getting the *result* to actually look right in the light theme was not
+- seven real, distinct bugs surfaced, almost all of them only visible once a second theme actually
+existed to expose them. Recorded in full below rather than smoothed into "it worked."
+
+- Built: `chrome::Theme` (`Dark`/`Light`), `chrome::ThemeManager` (a Meyers-singleton `QObject`
+  with a `themeChanged` signal and `setTheme()`/`currentTheme()`), `darkPalette()`/`lightPalette()`
+  replacing the single `kPalette`, and `chrome::palette()` dispatching between them - every one of
+  the ~15 existing call sites needed zero changes, since none of them ever cached the returned
+  reference. Every theme-dependent widget (`BoardWidget`, `TitleBarWidget`, `MainWindow`,
+  `SettingsDialog`) independently subscribes to `themeChanged` and re-applies its own styling,
+  rather than one central place reaching into all of them - `TitleBarWidget` gained a
+  `refreshTheme()` method for this, matching the same pattern `MainWindow::refreshTheme()` already
+  needed for its own chrome. The actual toggle is a `QCheckBox("Light theme")` in a new
+  "Appearance" section in `SettingsDialog`, session-only (no `QSettings` anywhere in this app
+  today - matches this dialog's own already-documented "nothing here persists" convention, not a
+  new exception). Board felt/disc colors were originally planned to stay constant across themes
+  (chess.com's own board color is independent of site light/dark mode) - reversed mid-phase after
+  actually seeing it: the dark theme's deep, slightly mossy green read as a flat, disconnected dark
+  patch against the light theme's bright white surround, so `boardPalette()` now has a brighter,
+  fresher green for light theme too (gridlines follow the same reasoning). Discs and the
+  legal-move-highlight stay constant either way.
+- Bug 1 (a real one, caught before it ever became visible): `BoardWidget`'s `boardPalette()`
+  returned a function-local `static const BoardPalette`, reading `chrome::palette()` correctly
+  once and then silently serving that first snapshot forever - invisible with a single fixed
+  theme, but a guaranteed stale-color bug the instant a runtime switch existed. Fixed by returning
+  a fresh value on every call (cheap - a handful of `QColor`s, once per `paintEvent`).
+- Bug 2: the toolbar "Analysis" button's `:checked` text color and the MultiPV top-line rank
+  badge's text both used `theme.windowBackground` as a "this reads as dark" stand-in for text
+  drawn on top of the solid `accentColor` fill - works by coincidence in the dark theme
+  (`windowBackground` is dark there) and inverts to white-on-gold in the light theme. Fixed with a
+  new `accentTextColor` role, deliberately identical in both palettes since `accentColor` itself
+  doesn't change with theme either.
+- Bug 3: `buildAnalysisLineRow()`'s meta/PV text used `theme.panelHover.lighter(160)` - a
+  dark-theme-only trick (lightening an already-dark gray produces a visible dim gray) that
+  inverted into washing the text out to near-invisible once `panelHover` itself started light.
+  Fixed with a `secondaryTextColor` role carrying its own correct value per theme instead of a
+  lightness transform assumed to work in only one direction.
+- Bug 4: `QGroupBox`'s title text was clipped by its own top border - `margin-top: 12px` was too
+  tight for the bold title's real line height, invisible-by-accident against dark-on-dark but
+  unmistakable once light theme's contrast exposed the cut-off. Bumped to 20px - a real layout
+  bug, not a color one, and not new to this phase (it was there the whole time `SettingsDialog`
+  existed).
+- Bug 5: even after fixing the clipping, the title text still rendered in the same near-white tone
+  as the light theme's own background - two rounds of QSS (`color` on `::title` alone, then also
+  duplicated onto the outer `QGroupBox` selector) didn't hold up in practice. Fixed by setting
+  `QPalette::WindowText` directly on each `QGroupBox` (via `findChildren`, not a stored list, so
+  any future section is covered automatically) - Fusion's own title painter reads from the
+  palette, not reliably from QSS, for this one specific piece of chrome.
+- Bug 6: `moveHistoryList_` never had an explicit `color` in its own stylesheet at all (only
+  border/background/item padding) - every entry except the current one (which gets an explicit
+  per-item `setForeground()`) fell back to Fusion's own default palette text instead of
+  `chrome::palette().textColor`, invisible against the light theme. Fixed by adding `color` to the
+  shared stylesheet and refreshing it on theme change too. While in the area: made every entry
+  bold and a size larger (previously only the current entry was bold), with the current entry one
+  size larger again on top - a direct, unrelated styling request that landed in the same pass.
+- Bug 7: `SettingsDialog`'s own base background was never set through the theme system at all -
+  only its children (`QGroupBox`, `QPushButton`, ...) were, via their own QSS selectors. The space
+  around/between them sat at Qt's unstyled default the entire time, invisible until the
+  now-correctly-dark group-box titles had a still-dark dialog background to blend back into. Fixed
+  with the same `setAutoFillBackground()` + `QPalette::Window` pattern `MainWindow.cpp`'s own
+  `container` widget already used for the identical reason back in M9 phase 1.
+- Bug 8 (a QSS cascade gotcha, not a missing color): the toolbar "Analysis" button still showed a
+  border after its background/radius were otherwise correct. `#toolbarButton` never said `border:
+  none` - Qt's stylesheet cascade resolves per PROPERTY by specificity, not "whichever selector
+  matches wins entirely," so the generic `QPushButton { border: 1px solid panelBorder }` rule
+  (still reaching this button via `panel_`'s own cascade) kept applying for that one property.
+  Also removed the MultiPV row cards' own border entirely per the established "shading, not
+  borders" convention, giving them a `panelHover` fill instead of `popupBackground` (which
+  `analysisPane_`, their own parent, already uses) so they still read as distinct rows without one.
+- Layout finding, investigated with real diagnostics rather than guessed: "the side panel doesn't
+  reach as far down as the board" turned out not to be a layout bug at all. Temporarily bordering
+  `panel_`, its `QSplitter`, and the toolbar bar directly and screenshotting showed `panel_`'s own
+  bounding box already matched `boardColumn`'s height almost exactly - the visible gap was the
+  toolbar's own asymmetric bottom margin (12px vs. 8px top), padding the board's side never had an
+  equivalent for. Fixed by zeroing that margin (`panel_`'s own outer 12px from `boardRow` already
+  provides the real breathing room, matching how `statusLabel_` gets none of its own beyond that).
+- Follow-up, unrelated to theming but found and fixed in the same session: real drag-to-resize
+  never actually worked on this frameless window - `Qt::FramelessWindowHint` (set since M3, for
+  the custom title bar + DWM corner rounding) discards the OS's native resize-border handling
+  along with the rest of the frame, and nothing had replaced it. Restored via `WM_NCHITTEST`
+  (`MainWindow::nativeEvent()`, Windows-only) reporting which edge the cursor is near - answering
+  the hit-test alone wasn't sufficient, since Windows gates its resize-drag behavior on the
+  `WS_THICKFRAME`/`WS_CAPTION` style bits that `Qt::FramelessWindowHint` had cleared; re-added them
+  (`enableWindowsResizeFrame()`) alongside a `WM_NCCALCSIZE` handler that claims the entire window
+  as client area, which is what keeps the native caption/border from actually being drawn even
+  though the style bits enabling resize/Aero-Snap are back in effect - the standard technique for
+  a window that looks frameless but behaves like a normal resizable one.
+- Verified: 204/204 automated tests green throughout (no new tests - pure GUI styling/state,
+  consistent with every other M9/M10 visual-pass step; manual GUI verification, this time driven
+  directly by the user across several rounds rather than screenshot automation on this side, is
+  what actually caught bugs 2 through 8 above). Both themes manually confirmed working end-to-end,
+  including the settings dialog, move history, MultiPV cards, and window resize.
