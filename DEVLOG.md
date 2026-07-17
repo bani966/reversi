@@ -846,3 +846,53 @@ settings panel, visual parity) built, tested, and manually verified, including o
 spec item (move history) and one structural rebuild (MultiPV display) each explicitly called out
 and re-verified rather than silently folded into the visual pass. M10 (release: animations,
 sound, themes, installers, v1.0) is next.
+
+## M10 — Release (in progress)
+
+### Phase 1: piece-flip animation
+
+- Built: the specific item M3/M9 deferred - discs previously popped straight to their final color
+  the instant a move landed. `BoardWidget::DisplayState` gained one new field, `bool animate`
+  (default `true`), and `BoardWidget` itself owns the entire animation - a single shared
+  `QVariantAnimation` (140ms, `QEasingCurve::InOutQuad`), `previousBlackDiscs_`/
+  `previousWhiteDiscs_`, and `flippingSquares_` (the diff `(oldBlack & newWhite) | (oldWhite &
+  newBlack)` between the on-screen state and the incoming one). `paintEvent()` renders a flipping
+  square as a horizontally-squashed ellipse (`|cos(pi * progress)|` for the width scale - the
+  classic 2D "coin flip" trick), swapping from the previous color to the new one exactly at the
+  halfway point where the disc is edge-on/invisible, so the swap itself is imperceptible. A
+  brand-new placement (the played square itself) is deliberately excluded from `flippingSquares_`
+  and still pops in instantly - only *captured* discs flip, matching the real rule and keeping
+  this phase scoped to exactly what was asked.
+- Interesting design problem, caught before implementing (not after): a plain bitboard diff alone
+  would almost work for distinguishing "flip this" from "don't," except for `newGame()` - the diff
+  can't tell a real captured-disc flip apart from the 4 starting squares (d4/d5/e4/e5) simply
+  happening to hold the opposite color from whatever the *previous* game ended with there. Since
+  those are the most commonly-occupied central squares in any finished game, this isn't a rare
+  edge case; it needed an explicit signal, not a heuristic. Fixed by having `GameController`
+  thread a `bool animate` parameter through `advanceTurn()`/`finalizeTurn()`/`emitBoardState()`
+  (all defaulting to `true`, so every existing bare call site - `onSquareClicked`,
+  `onAiSearchFinished`, `restoreFromHistory()`'s undo/redo/jump path - kept working unchanged) and
+  passing `false` explicitly at exactly the two genuinely discontinuous sites: `newGame()` and
+  `applyLoadedHistory()` (load/import). `BoardWidget` still owns *how* to animate entirely; this
+  is the one domain fact it cannot safely infer on its own.
+- Interesting decision on the "no exception" cancellation requirement: rather than rely on
+  `QVariantAnimation::start()`'s own (undocumented, in this codebase's context) rewind-on-restart
+  behavior, `setDisplayState()` explicitly calls `stop()` + `setCurrentTime(0)` + resets
+  `flipProgress_ = 0.0` synchronously before `start()` - so a flip re-triggered mid-flight (rapid
+  undo/redo clicks, fast back-to-back AI moves at a low configured time budget) always restarts
+  cleanly from progress 0, both in the animation's own internal state and in what the very next
+  paint call shows, with no dependency on a framework default that wasn't verified directly.
+  Using one shared animation clock for every currently-flipping square (not one per square) is
+  what makes this trivially correct - they all started at the same `setDisplayState()` call, so
+  one progress value driving all of them is both accurate and leaves nothing that could go out of
+  sync between squares.
+- Verified: 204/204 automated tests green (no new tests - `app/tests/` has exactly one
+  QApplication-free file, and this is the same class of change - timer/paint-driven GUI behavior -
+  as every other `GameController`/`BoardWidget` addition in M9, all of which were verified
+  manually rather than with new unit tests; consistent with that established precedent, not a new
+  gap). Manual GUI verification (real mouse-click automation, `PrintWindow` screenshots): a
+  screenshot taken ~60ms after clicking a capturing move caught the captured disc mid-flip as a
+  narrow vertical ellipse exactly as designed, with the newly-placed disc already fully rendered
+  (no flip, as intended) and the move-history list already updated; a follow-up screenshot after
+  the animation window elapsed showed the fully-settled, correct final position. User confirmed
+  the animation reads well in real interactive use.

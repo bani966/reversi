@@ -244,8 +244,13 @@ private:
 
     bool isHumanTurn() const;
     bool isHumanTurnFor(bool blackToMove) const;
-    void advanceTurn();
-    void emitBoardState();
+    // M10 phase 1: `animate` distinguishes a continuous move-by-move update (a real move just
+    // applied - default) from a discontinuous position swap (newGame()/applyLoadedHistory(),
+    // which pass false explicitly) - threaded straight through into DisplayState::animate so
+    // BoardWidget knows whether to flip the changed discs or snap to them instantly. See
+    // BoardWidget.hpp's doc comment on DisplayState::animate for the full reasoning.
+    void advanceTurn(bool animate = true);
+    void emitBoardState(bool animate = true);
     void emitStatus(const QStringList& passMessages);
 
     void startAiSearch();
@@ -283,6 +288,7 @@ private:
     // The non-history-pushing half of advanceTurn(): emits boardChanged/statusChanged and starts
     // an AI search if appropriate. Factored out so applyLoadedHistory() can reuse it without
     // advanceTurn() pushing a second, duplicate history_ entry on top of the one replayMoves()
-    // already built.
-    void finalizeTurn(const QStringList& passMessages);
+    // already built. `animate` is forwarded straight to emitBoardState() - see advanceTurn()'s
+    // own doc comment above.
+    void finalizeTurn(const QStringList& passMessages, bool animate = true);
 };

@@ -69,7 +69,9 @@ void GameController::newGame(GameMode mode) {
     lastMoveSquare_ = -1;
     history_.clear();
     historyIndex_ = 0;
-    advanceTurn();
+    // false: the previous on-screen position (whatever it was) bears no meaningful relationship
+    // to a fresh start position - BoardWidget should snap to it, not flip.
+    advanceTurn(false);
 }
 
 void GameController::setLastMoveHighlightEnabled(bool enabled) {
@@ -188,7 +190,7 @@ void GameController::commitMove(int square) {
     lastMoveSquare_ = square;
 }
 
-void GameController::advanceTurn() {
+void GameController::advanceTurn(bool animate) {
     // A pass is forced, not a choice, so there's nothing for the user to confirm - just apply
     // any consecutive forced passes and report what happened once, rather than a fleeting
     // per-pass message that a fully synchronous UI update would never actually get to show.
@@ -203,11 +205,11 @@ void GameController::advanceTurn() {
     // pass-resolved resting position (see HistoryEntry's doc comment in the header).
     history_.push_back({pos_, blackToMove_, lastMoveSquare_});
     historyIndex_ = history_.size() - 1;
-    finalizeTurn(passMessages);
+    finalizeTurn(passMessages, animate);
 }
 
-void GameController::finalizeTurn(const QStringList& passMessages) {
-    emitBoardState();
+void GameController::finalizeTurn(const QStringList& passMessages, bool animate) {
+    emitBoardState(animate);
     emitStatus(passMessages);
     if (!reversi::isGameOver(pos_) && !isHumanTurn()) {
         startAiSearch();
@@ -329,7 +331,7 @@ void GameController::onAnalysisFinished(std::vector<reversi::RankedMove> lines, 
     emit analysisFinished(lines, pv, blackToMove);
 }
 
-void GameController::emitBoardState() {
+void GameController::emitBoardState(bool animate) {
     BoardWidget::DisplayState state;
     state.blackDiscs = blackToMove_ ? pos_.own : pos_.opp;
     state.whiteDiscs = blackToMove_ ? pos_.opp : pos_.own;
@@ -337,6 +339,7 @@ void GameController::emitBoardState() {
                                     ? reversi::legalMoves(pos_)
                                     : reversi::Bitboard{0};
     state.lastMoveSquare = lastMoveHighlightEnabled_ ? lastMoveSquare_ : -1;
+    state.animate = animate;
     emit boardChanged(state);
 }
 
@@ -468,7 +471,9 @@ void GameController::applyLoadedHistory(GameMode mode, std::vector<HistoryEntry>
     blackToMove_ = current.blackToMove;
     lastMoveSquare_ = current.lastMoveSquare;
     lastMoveHighlightEnabled_ = lastMoveHighlightEnabled;
-    finalizeTurn({}); // no pass messages to report for a freshly loaded/imported game
+    // false: a loaded/imported game is a wholesale, unrelated position swap - same reasoning as
+    // newGame()'s own false above.
+    finalizeTurn({}, false); // no pass messages to report for a freshly loaded/imported game
 }
 
 std::vector<int> GameController::currentMoveList() const {

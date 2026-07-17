@@ -2,13 +2,20 @@
 
 #include "Palette.hpp"
 
+#include <QEasingCurve>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QResizeEvent>
 #include <algorithm>
+#include <cmath>
+#include <numbers>
 
 namespace {
 constexpr int kBoardSquares = 8;
+// M10 phase 1: within the requested ~120-150ms range - fast enough to stay out of the way of a
+// human clicking through moves quickly, slow enough to actually read as a flip rather than a
+// flicker.
+constexpr int kFlipAnimationDurationMs = 140;
 
 // Named color roles, defined once here rather than as literals scattered through paintEvent.
 // windowBackground/coordinateTextColor/lastMoveHighlightColor come from the shared
@@ -53,10 +60,50 @@ const BoardPalette& boardPalette() {
 
 BoardWidget::BoardWidget(QWidget* parent) : QWidget(parent) {
     setMouseTracking(false);
+
+    // One shared clock for every currently-flipping square - see the header's doc comment on
+    // flipProgress_ for why a single animation, not one per square, is both correct and what
+    // makes re-triggering mid-flight a clean supersede rather than a blend.
+    flipAnimation_ = new QVariantAnimation(this);
+    flipAnimation_->setDuration(kFlipAnimationDurationMs);
+    flipAnimation_->setStartValue(0.0);
+    flipAnimation_->setEndValue(1.0);
+    flipAnimation_->setEasingCurve(QEasingCurve::InOutQuad);
+    connect(flipAnimation_, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+        flipProgress_ = value.toDouble();
+        update();
+    });
 }
 
 void BoardWidget::setDisplayState(const DisplayState& state) {
+    // Diffed against state_ (what's still on screen right now) BEFORE it's overwritten below. A
+    // square only counts as "flipping" if it held a disc in both the old and new state with a
+    // different color - an empty->disc placement (the just-played square itself) isn't a flip,
+    // it pops in immediately, matching the real rule that only captured discs flip.
+    flippingSquares_ = state.animate ? (state_.blackDiscs & state.whiteDiscs) |
+                                           (state_.whiteDiscs & state.blackDiscs)
+                                     : reversi::Bitboard{0};
+    previousBlackDiscs_ = state_.blackDiscs;
+    previousWhiteDiscs_ = state_.whiteDiscs;
     state_ = state;
+
+    if (flippingSquares_ != 0) {
+        // Explicit stop() + setCurrentTime(0) + start(), rather than relying on start()'s own
+        // (undocumented here) rewind behavior - a flip re-triggered mid-flight (rapid undo/redo
+        // clicks, fast back-to-back AI moves at a low configured time budget) must always restart
+        // cleanly from progress 0, never resume or blend with a stale in-flight animation. This is
+        // the "a new animation always supersedes the old one, no exception" requirement, satisfied
+        // structurally. flipProgress_ is also set synchronously so the very next paintEvent (from
+        // the update() below) already shows the correct first frame, without waiting for the
+        // animation's own timer to tick.
+        flipAnimation_->stop();
+        flipAnimation_->setCurrentTime(0);
+        flipProgress_ = 0.0;
+        flipAnimation_->start();
+    } else {
+        flipAnimation_->stop();
+        flipProgress_ = 1.0;
+    }
     update();
 }
 
@@ -176,7 +223,29 @@ void BoardWidget::paintEvent(QPaintEvent*) {
                 painter.fillRect(cell, theme.lastMoveHighlightColor);
             }
 
-            if ((state_.blackDiscs & mask) != 0) {
+            if ((flippingSquares_ & mask) != 0 && flipProgress_ < 1.0) {
+                // M10 phase 1: a captured disc mid-flip. Standard 2D "coin flip" trick - the
+                // disc's width shrinks to 0 (edge-on) at the animation's halfway point, then
+                // grows back; the from/to color swap happens exactly there, when the disc is
+                // momentarily invisible, so the swap itself is imperceptible.
+                const bool wasBlack = (previousBlackDiscs_ & mask) != 0;
+                const bool firstHalf = flipProgress_ < 0.5;
+                // firstHalf shows the square's previous color (wasBlack); the second half shows
+                // its new color (the opposite one - only genuinely flipped squares reach here).
+                const bool showBlack = firstHalf ? wasBlack : !wasBlack;
+                const QColor& fill = showBlack ? theme.blackDiscFill : theme.whiteDiscFill;
+                const QColor& border = showBlack ? theme.blackDiscBorder : theme.whiteDiscBorder;
+                const double widthScale = std::abs(std::cos(std::numbers::pi * flipProgress_));
+                const QRect discRect =
+                    cell.adjusted(discMargin, discMargin, -discMargin, -discMargin);
+                const int squashedWidth =
+                    std::max(1, static_cast<int>(discRect.width() * widthScale));
+                const QRect flippedRect(discRect.center().x() - squashedWidth / 2, discRect.top(),
+                                        squashedWidth, discRect.height());
+                painter.setPen(QPen(border, discBorderWidth));
+                painter.setBrush(fill);
+                painter.drawEllipse(flippedRect);
+            } else if ((state_.blackDiscs & mask) != 0) {
                 painter.setPen(QPen(theme.blackDiscBorder, discBorderWidth));
                 painter.setBrush(theme.blackDiscFill);
                 painter.drawEllipse(
