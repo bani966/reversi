@@ -13,6 +13,7 @@ class GameController;
 class TitleBarWidget;
 class QCloseEvent;
 class QLabel;
+class QListWidget;
 class QMenuBar;
 class QPlainTextEdit;
 class QPushButton;
@@ -40,9 +41,19 @@ private:
     QPushButton* analyzeButton_;
     QLabel* analysisStatusLabel_;
     QPlainTextEdit* analysisResultsView_;
+    // M9 phase 5: move-history list - a missed item from the original spec (alongside undo/redo
+    // and save/load), not new scope; built alongside the rest of this phase's visual pass but
+    // its own reviewed step, same as MultiPV got its own section in phase 3.
+    QListWidget* moveHistoryList_;
 
     void createMenus();
-    void setupAnalysisPanel();
+    // Builds panel_'s two sections (move history, analysis) into a vertical QSplitter - the
+    // single entry point called from the constructor; setupMoveHistoryPanel()/
+    // setupAnalysisPanel() each build and return their own pane widget for the splitter.
+    void setupPanelContent();
+    QWidget* setupMoveHistoryPanel();
+    QWidget* setupAnalysisPanel();
+    void updateMoveHistoryList();
     void updateAnalyzeButtonEnabled();
     void renderAnalysisResults(const std::vector<reversi::RankedMove>& lines,
                                const std::vector<int>& pv, bool blackToMove);

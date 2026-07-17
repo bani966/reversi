@@ -396,6 +396,16 @@ void GameController::redo() {
     restoreFromHistory(historyIndex_);
 }
 
+void GameController::jumpToHistoryIndex(std::size_t index) {
+    if (index >= history_.size() || index == historyIndex_) {
+        return; // out of bounds, or already there: no-op
+    }
+    cancelAiSearch();
+    cancelAnalysis();
+    historyIndex_ = index;
+    restoreFromHistory(historyIndex_);
+}
+
 void GameController::restoreFromHistory(std::size_t index) {
     const HistoryEntry& entry = history_[index];
     pos_ = entry.position;
@@ -465,6 +475,15 @@ std::vector<int> GameController::currentMoveList() const {
     std::vector<int> moves;
     moves.reserve(historyIndex_);
     for (std::size_t i = 1; i <= historyIndex_; ++i) {
+        moves.push_back(history_[i].lastMoveSquare);
+    }
+    return moves;
+}
+
+std::vector<int> GameController::fullMoveList() const {
+    std::vector<int> moves;
+    moves.reserve(history_.size());
+    for (std::size_t i = 1; i < history_.size(); ++i) {
         moves.push_back(history_[i].lastMoveSquare);
     }
     return moves;

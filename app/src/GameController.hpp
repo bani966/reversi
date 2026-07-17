@@ -57,6 +57,23 @@ public:
     void undo();
     void redo();
 
+    // M9 phase 5: move-history list support - a missed item from the original spec (alongside
+    // undo/redo and save/load), not new scope. fullMoveList() differs from the private
+    // currentMoveList() below (saveGame/exportTranscript's helper, which stops at historyIndex_):
+    // this returns the WHOLE history_, including any undone "redo" tail, so a move-history list
+    // can show - and jump back into - moves the user has undone past, not just what's currently
+    // on screen. fullMoveList()[k] corresponds to history_[k+1] (index 0 is always the start
+    // position, no move attached).
+    std::vector<int> fullMoveList() const;
+    std::size_t currentHistoryIndex() const { return historyIndex_; }
+    // Jumps directly to an arbitrary point in history_ (a move-history list click). Unlike
+    // undo()/redo(), does NOT skip past AI turns to land on a human turn - the user clicked a
+    // SPECIFIC move and expects to land on exactly that index. Reuses restoreFromHistory() (the
+    // same "restore and look, don't act" path undo()/redo() already use) after the same
+    // cancelAiSearch()/cancelAnalysis() discipline. No-ops if index is out of bounds or already
+    // current.
+    void jumpToHistoryIndex(std::size_t index);
+
     // Save/load: this app's own JSON format (GameNotation::toSaveJson/fromSaveJson). Import/
     // export: a plain-text Othello transcript, and a 65-char board-position snapshot
     // (GameNotation::toTranscript/fromTranscript, toBoardString/fromBoardString). All six

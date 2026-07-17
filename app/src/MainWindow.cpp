@@ -10,6 +10,7 @@
 #include "reversi/position.hpp"
 
 #include <QAction>
+#include <QBrush>
 #include <QCloseEvent>
 #include <QEvent>
 #include <QFileDialog>
@@ -17,12 +18,14 @@
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
+#include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPalette>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSplitter>
 #include <QStatusBar>
 #include <QStringList>
 #include <QVBoxLayout>
@@ -204,10 +207,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     // board_ keeps the stretch factor so it - not panel_ - absorbs extra space on resize,
     // mirroring how board_ already gets stretch 1 vertically in the outer layout below. Left
-    // margin matches panel_'s own internal layout margin (setupAnalysisPanel(), 12px) so the
-    // board's left edge sits the same distance from the window border as the panel's content
-    // does from the window's right border - without this, the board sat flush against the left
-    // edge while the panel's content had a visible 12px inset on the right, reading as unbalanced.
+    // margin matches the 12px margin each of panel_'s own sub-panes uses internally
+    // (setupMoveHistoryPanel()/setupAnalysisPanel()) so the board's left edge sits the same
+    // distance from the window border as the panel's content does from the window's right
+    // border - without this, the board sat flush against the left edge while the panel's content
+    // had a visible 12px inset on the right, reading as unbalanced.
     auto* boardRow = new QHBoxLayout();
     boardRow->setContentsMargins(12, 0, 0, 0);
     boardRow->setSpacing(0);
@@ -255,7 +259,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         updateAnalyzeButtonEnabled();
     });
 
-    setupAnalysisPanel();
+    setupPanelContent();
     createMenus();
 
     controller_->newGame(GameMode::HumanVsHuman);
@@ -400,33 +404,105 @@ void MainWindow::createMenus() {
     connect(aiVsAi, &QAction::triggered, this, [this] { controller_->newGame(GameMode::AiVsAi); });
 }
 
-// M9 phase 3: panel_'s first real content - "Analyze Position" triggers on-demand MultiPV
-// analysis of the CURRENT position (any GameMode, regardless of whose turn it is), rendering the
-// ranked lines plus a principal variation for the top line. QPlainTextEdit (read-only) rather
-// than a custom table/model widget - simplest thing that can show multiple lines plus a PV
-// string without building new machinery for a first pass; phase 5's visual-parity pass can
-// restyle this.
-void MainWindow::setupAnalysisPanel() {
+// M9 phase 5: panel_'s two sections (move history, analysis) live in a vertical QSplitter so
+// each list-like section (a growing move list; a growing MultiPV results list) can be resized by
+// the user rather than fighting over a fixed stacked-layout split.
+void MainWindow::setupPanelContent() {
     panel_->setStyleSheet(buildAnalysisPanelStyleSheet());
 
     auto* layout = new QVBoxLayout(panel_);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    auto* splitter = new QSplitter(Qt::Vertical, panel_);
+    splitter->addWidget(setupMoveHistoryPanel());
+    splitter->addWidget(setupAnalysisPanel());
+    layout->addWidget(splitter);
+}
+
+// M9 phase 5: move-history list - a missed item from the original spec (alongside undo/redo and
+// save/load), not new scope. Reuses GameController::jumpToHistoryIndex()/fullMoveList()/
+// currentHistoryIndex() exactly - no new history tracking here, this widget only ever displays
+// what GameController already owns.
+QWidget* MainWindow::setupMoveHistoryPanel() {
+    auto* pane = new QWidget(panel_);
+    auto* layout = new QVBoxLayout(pane);
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(8);
 
-    auto* headerLabel = new QLabel(QStringLiteral("Analysis"), panel_);
+    auto* headerLabel = new QLabel(QStringLiteral("Move History"), pane);
     QFont headerFont = headerLabel->font();
     headerFont.setPointSize(headerFont.pointSize() + 2);
     headerFont.setBold(true);
     headerLabel->setFont(headerFont);
     layout->addWidget(headerLabel);
 
-    analyzeButton_ = new QPushButton(QStringLiteral("Analyze Position"), panel_);
+    moveHistoryList_ = new QListWidget(pane);
+    // itemClicked (not currentRowChanged): only fires on a genuine mouse click, unlike
+    // currentRowChanged, which would also fire from updateMoveHistoryList()'s own programmatic
+    // setCurrentRow()-equivalent state below, creating a needless feedback loop.
+    connect(moveHistoryList_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
+        const int row = moveHistoryList_->row(item);
+        if (row < 0) {
+            return;
+        }
+        // fullMoveList()[row] is history_[row + 1] - see GameController.hpp's own doc comment.
+        controller_->jumpToHistoryIndex(static_cast<std::size_t>(row) + 1);
+    });
+    layout->addWidget(moveHistoryList_, 1);
+
+    // history_/historyIndex_ can change from many places (a live move, undo/redo, a jump, load/
+    // import) - boardChanged already fires after every one of them (traced in the plan), so no
+    // new signal is needed to keep this list in sync.
+    connect(controller_, &GameController::boardChanged, this,
+            [this](const BoardWidget::DisplayState&) { updateMoveHistoryList(); });
+
+    return pane;
+}
+
+void MainWindow::updateMoveHistoryList() {
+    const std::vector<int> moves = controller_->fullMoveList();
+    const std::size_t currentIndex = controller_->currentHistoryIndex();
+
+    moveHistoryList_->clear();
+    QFont currentFont = moveHistoryList_->font();
+    currentFont.setBold(true);
+    for (std::size_t i = 0; i < moves.size(); ++i) {
+        auto* item = new QListWidgetItem(QStringLiteral("%1. %2").arg(i + 1).arg(
+            QString::fromStdString(reversi::squareToString(moves[i]))));
+        // history_[0] is the start position (no move); fullMoveList()[i] is history_[i + 1] - so
+        // this item is "current" iff currentIndex == i + 1.
+        if (i + 1 == currentIndex) {
+            item->setFont(currentFont);
+            item->setForeground(QBrush(chrome::palette().accentColor));
+        }
+        moveHistoryList_->addItem(item);
+    }
+}
+
+// M9 phase 3: on-demand MultiPV analysis of the CURRENT position - "Analyze Position" ranks
+// candidate moves plus a principal variation for the top line. Builds and returns its own pane
+// widget (M9 phase 5: previously built directly into panel_ before panel_ grew a second section).
+QWidget* MainWindow::setupAnalysisPanel() {
+    auto* pane = new QWidget(panel_);
+    auto* layout = new QVBoxLayout(pane);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(8);
+
+    auto* headerLabel = new QLabel(QStringLiteral("Analysis"), pane);
+    QFont headerFont = headerLabel->font();
+    headerFont.setPointSize(headerFont.pointSize() + 2);
+    headerFont.setBold(true);
+    headerLabel->setFont(headerFont);
+    layout->addWidget(headerLabel);
+
+    analyzeButton_ = new QPushButton(QStringLiteral("Analyze Position"), pane);
     layout->addWidget(analyzeButton_);
 
-    analysisStatusLabel_ = new QLabel(QStringLiteral("Ready"), panel_);
+    analysisStatusLabel_ = new QLabel(QStringLiteral("Ready"), pane);
     layout->addWidget(analysisStatusLabel_);
 
-    analysisResultsView_ = new QPlainTextEdit(panel_);
+    analysisResultsView_ = new QPlainTextEdit(pane);
     analysisResultsView_->setReadOnly(true);
     analysisResultsView_->setPlaceholderText(
         QStringLiteral("Click \"Analyze Position\" to rank candidate moves."));
@@ -454,6 +530,8 @@ void MainWindow::setupAnalysisPanel() {
     // when analysis itself starts/finishes.
     connect(controller_, &GameController::boardChanged, this,
             [this](const BoardWidget::DisplayState&) { updateAnalyzeButtonEnabled(); });
+
+    return pane;
 }
 
 void MainWindow::updateAnalyzeButtonEnabled() {
