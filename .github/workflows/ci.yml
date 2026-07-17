@@ -3,13 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
-  # Lets a Release be (re-)published for an already-existing tag without deleting/recreating it -
-  # select the tag itself (not a branch) as "Use workflow from" in the Run workflow UI, so
-  # github.ref resolves to that tag and the release job's own `if` below picks it up identically
-  # to a real tag push.
-  workflow_dispatch:
 
 jobs:
   format:
@@ -140,38 +134,3 @@ jobs:
         run: cmake --build --preset ci-linux-tsan --parallel
       - name: Test
         run: ctest --preset ci-linux-tsan
-
-  # Publishes a GitHub Release with the Windows installer/portable zip and macOS DMG attached,
-  # whenever a v* tag is pushed (or this workflow is manually re-run against an existing tag - see
-  # workflow_dispatch above). Requires every other job to succeed first - not just windows/macos,
-  # which merely produce the artifacts - so a release never gets published on the back of a
-  # sanitizer/TSan/format failure elsewhere in the same run. Uses the plain gh CLI (preinstalled on
-  # every GitHub-hosted runner) rather than a third-party release-publishing Action, so there's no
-  # new dependency to vet.
-  release:
-    needs: [format, windows, macos, linux, sanitize, tsan]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: reversi-windows-installer
-          path: dist
-      - uses: actions/download-artifact@v4
-        with:
-          name: reversi-windows-portable
-          path: dist
-      - uses: actions/download-artifact@v4
-        with:
-          name: reversi-macos-dmg
-          path: dist
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${{ github.ref_name }}" dist/* \
-            --title "Reversi ${{ github.ref_name }}" \
-            --generate-notes
