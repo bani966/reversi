@@ -203,7 +203,7 @@ SettingsDialog::SettingsDialog(GameController* controller, QWidget* parent)
     // dark-mode attribute, and the dialog's own background, and the group-box title color)
     // immediately rather than waiting for it to be closed and reopened.
     connect(&chrome::ThemeManager::instance(), &chrome::ThemeManager::themeChanged, this,
-            [this](chrome::Theme newTheme) {
+            [this]([[maybe_unused]] chrome::Theme newTheme) {
                 setStyleSheet(chrome::panelControlsStyleSheet());
                 applyDialogBackground(this);
                 applyGroupBoxTextColor(this);
