@@ -5,6 +5,7 @@
 #include <QEasingCurve>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QResizeEvent>
 #include <algorithm>
 #include <cmath>
@@ -16,6 +17,11 @@ constexpr int kBoardSquares = 8;
 // human clicking through moves quickly, slow enough to actually read as a flip rather than a
 // flicker.
 constexpr int kFlipAnimationDurationMs = 140;
+// M10: a small rounding on the board's own outer edge, chess.com-style, kept equal by hand to
+// Palette.cpp's panelControlsStyleSheet() container radius (QFrame#sidePanel/QGroupBox) so the
+// board and the side panel read as one consistent "container" tier - see that function's own doc
+// comment in Palette.hpp for the cross-reference.
+constexpr int kCornerRadius = 6;
 
 // Named color roles, defined once here rather than as literals scattered through paintEvent.
 // windowBackground/coordinateTextColor/lastMoveHighlightColor come from the shared
@@ -38,14 +44,17 @@ struct BoardPalette {
 };
 
 const BoardPalette& boardPalette() {
-    // Traditional solid-green Othello felt table, chess.com-style panel typography and
-    // coordinate placement: a richer, slightly desaturated felt green (not neon), thin light
-    // gridlines on top of one continuous field, off-white/near-black discs (not pure #fff/
-    // #000) each with a subtle border for definition.
+    // Continuous-field Othello board (not a checkerboard of alternating squares - this is
+    // Othello, not chess), but tuned to chess.com's actual green board identity: boardColor is
+    // chess.com's own dark-square green (#769656), not an invented felt tone. Gridlines darkened
+    // to a mossy green-black rather than near-white, since a near-white line read as intended
+    // contrast against the old darker/more desaturated green but washes out against this lighter,
+    // more saturated one. Off-white/near-black discs (not pure #fff/#000) each with a subtle
+    // border for definition, unchanged.
     static const BoardPalette kPalette{
         .windowBackground = chrome::palette().windowBackground,
-        .boardColor = QColor(66, 116, 72),
-        .gridLineColor = QColor(235, 238, 230, 50),
+        .boardColor = QColor(118, 150, 86),
+        .gridLineColor = QColor(40, 66, 40, 90),
         .coordinateTextColor = chrome::palette().textColor,
         .blackDiscFill = QColor(26, 26, 28),
         .blackDiscBorder = QColor(58, 58, 62),
@@ -116,6 +125,7 @@ void BoardWidget::recomputeBoardGeometry() {
     cellSize_ = side / kBoardSquares;
     const int boardPixels = cellSize_ * kBoardSquares;
     boardOrigin_ = QPoint((width() - boardPixels) / 2, (height() - boardPixels) / 2);
+    emit boardWidthChanged(boardPixels);
 }
 
 int BoardWidget::squareAt(const QPoint& localPos) const {
@@ -162,6 +172,15 @@ void BoardWidget::paintEvent(QPaintEvent*) {
 
     const int boardPixels = cellSize_ * kBoardSquares;
     const QRect boardRect(boardOrigin_, QSize(boardPixels, boardPixels));
+
+    // M10: clip everything drawn inside boardRect (felt, gridlines, discs) to a small rounded
+    // rect - the four corner cells get a subtle rounded cut at the very edge without touching any
+    // of the per-cell drawing logic below, matching chess.com's own board corners and this app's
+    // side-panel radius (kCornerRadius, kept equal by hand - see its own doc comment above).
+    QPainterPath boardClipPath;
+    boardClipPath.addRoundedRect(boardRect, kCornerRadius, kCornerRadius);
+    painter.setClipPath(boardClipPath);
+
     // One continuous felt-green field, with thin light gridlines drawn on top - not a
     // checkerboard of alternating squares (this is Othello, not chess).
     painter.fillRect(boardRect, theme.boardColor);

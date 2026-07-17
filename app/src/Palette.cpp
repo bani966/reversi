@@ -3,6 +3,11 @@
 namespace chrome {
 
 const Palette& palette() {
+    // M10: a navy-slate retune was tried and reverted - the reference screenshot that prompted it
+    // turned out to be a non-default chess.com theme, and the neutral near-black chrome below
+    // reads better in practice (confirmed against chess.com's own actual default dark theme,
+    // which is neutral near-black too, not blue). accentColor/lastMoveHighlightColor were never
+    // touched either way.
     static const Palette kPalette{
         .windowBackground = QColor(24, 24, 26),
         .popupBackground = QColor(30, 30, 32),
@@ -23,9 +28,8 @@ QString panelControlsStyleSheet() {
     const Palette& theme = palette();
     return QStringLiteral(R"(
         QFrame#sidePanel {
-            background-color: %1;
-            border: 1px solid %3;
-            border-radius: 8px;
+            background-color: %5;
+            border-radius: 6px;
         }
         QPushButton {
             background-color: %1;
@@ -49,7 +53,7 @@ QString panelControlsStyleSheet() {
         QGroupBox {
             background-color: %1;
             border: 1px solid %3;
-            border-radius: 8px;
+            border-radius: 6px;
             margin-top: 12px;
             font-family: "Segoe UI";
             font-weight: 600;
@@ -95,8 +99,12 @@ QString panelControlsStyleSheet() {
         .arg(theme.textColor.name())        // %2
         .arg(theme.panelBorder.name())      // %3
         .arg(theme.panelHover.name())       // %4
-        .arg(theme.windowBackground.name()) // %5 - recessed control fill, one shade darker
-                                            // than the surrounding card (%1)
+        .arg(theme.windowBackground.name()) // %5 - the panel's own base shade (QFrame#sidePanel),
+                                            // one level darker than the popupBackground (%1)
+                                            // cards/controls sitting on top of it - also reused as
+                                            // the recessed control fill for QCheckBox::indicator/
+                                            // QSpinBox, one shade darker than their surrounding
+                                            // card
         .arg(theme.accentColor.name());     // %6 - checked checkbox fill, the same solid
                                             // emphasis color used elsewhere (MultiPV top-line
                                             // badge, move-history current-row indicator)

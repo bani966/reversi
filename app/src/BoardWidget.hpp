@@ -36,6 +36,12 @@ public:
 
 signals:
     void squareClicked(int square);
+    // M10: the actual rendered board square's side length in pixels - board_'s own allocated
+    // rect is generally wider/taller than the square board drawn inside it (recomputeBoardGeometry
+    // letterboxes to stay square), so anything that wants to visually line up with the real board
+    // edge (e.g. MainWindow's status label under it) needs this, not board_->width(). Emitted
+    // whenever recomputeBoardGeometry() runs (i.e. on every resize).
+    void boardWidthChanged(int boardPixels);
 
 protected:
     void paintEvent(QPaintEvent* event) override;

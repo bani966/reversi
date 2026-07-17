@@ -17,7 +17,6 @@ class QLabel;
 class QListWidget;
 class QMenuBar;
 class QPushButton;
-class QStatusBar;
 class QVBoxLayout;
 
 class MainWindow : public QMainWindow {
@@ -34,15 +33,24 @@ private:
     TitleBarWidget* titleBar_;
     QMenuBar* menuBar_;
     BoardWidget* board_;
-    // M9 phase 5: QFrame, not QWidget - a plain QWidget doesn't paint its own QSS background/
-    // border by default (Qt::WA_StyledBackground would be the other way to opt in; QFrame does
-    // it automatically, the same reason the MultiPV row cards are QFrames too), needed now that
-    // panel_ has a real border+radius via QFrame#sidePanel in chrome::panelControlsStyleSheet().
+    // M9 phase 5: QFrame, not QWidget - a plain QWidget doesn't paint its own QSS background by
+    // default (Qt::WA_StyledBackground would be the other way to opt in; QFrame does it
+    // automatically, the same reason the MultiPV row cards and the move-history/analysis panes
+    // are QFrames too), needed now that panel_ has a real background+radius via QFrame#sidePanel
+    // in chrome::panelControlsStyleSheet() (M10: background-color + radius only, no border).
     QFrame* panel_;
-    QStatusBar* statusBar_;
+    // M10: replaces the old QStatusBar, which spanned the whole window (board + panel) with
+    // generic OS status-bar chrome. This sits only under board_ (its own column in boardRow), a
+    // styled, borderless pill matching the board's own width - see MainWindow.cpp's boardColumn
+    // comment.
+    QLabel* statusLabel_;
     GameController* controller_;
 
-    // M9 phase 3: analysis panel, the first real content inside panel_.
+    // M9 phase 3: analysis panel, the first real content inside panel_. M10: starts hidden -
+    // toggled by the "Analysis" pill button in the panel's bottom toolbar (setupPanelToolbar()) -
+    // so analysisPane_ is now a stored member (previously setupAnalysisPanel()'s return value was
+    // only ever handed straight to the QSplitter and never needed again).
+    QWidget* analysisPane_;
     QPushButton* analyzeButton_;
     QLabel* analysisStatusLabel_;
     // M9 phase 5: MultiPV results rebuilt from a single QPlainTextEdit text block into real
@@ -58,12 +66,16 @@ private:
     QListWidget* moveHistoryList_;
 
     void createMenus();
-    // Builds panel_'s two sections (move history, analysis) into a vertical QSplitter - the
-    // single entry point called from the constructor; setupMoveHistoryPanel()/
-    // setupAnalysisPanel() each build and return their own pane widget for the splitter.
+    // Builds panel_'s two sections (move history, analysis) into a vertical QSplitter plus a
+    // fixed bottom toolbar row (setupPanelToolbar()) - the single entry point called from the
+    // constructor; setupMoveHistoryPanel()/setupAnalysisPanel() each build and return their own
+    // pane widget for the splitter.
     void setupPanelContent();
     QWidget* setupMoveHistoryPanel();
     QWidget* setupAnalysisPanel();
+    // M10: the "Analysis" pill toggle (chess.com's own flag/undo/lightbulb bottom-row convention)
+    // - room for more toolbar buttons later, though only Analysis exists today.
+    QWidget* setupPanelToolbar();
     void updateMoveHistoryList();
     void updateAnalyzeButtonEnabled();
     void renderAnalysisResults(const std::vector<reversi::RankedMove>& lines,

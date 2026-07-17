@@ -35,8 +35,13 @@ const Palette& palette();
 // history panes and SettingsDialog (previously entirely unstyled) can't drift out of sync with
 // each other the way two independently-hand-copied stylesheets could. Controls (QPushButton,
 // QSpinBox) use a 4px radius; containers (QGroupBox, and panel_ itself via its own
-// QFrame#sidePanel selector, set by whichever caller applies this stylesheet) use 8px - the same
-// "cards vs. controls" radius hierarchy the MultiPV row cards (MainWindow.cpp) already use.
+// QFrame#sidePanel selector, set by whichever caller applies this stylesheet) use 6px - the same
+// "cards vs. controls" radius hierarchy the MultiPV row cards and panel_'s own move-history/
+// analysis panes (MainWindow.cpp) already use, and matching BoardWidget.cpp's own board-corner
+// radius (kept equal by hand across the two files - see BoardWidget.cpp's kCornerRadius comment).
+// M10: QFrame#sidePanel no longer has a stroked border - chess.com's own panel is background-color
+// only, with lighter cards (popupBackground) sitting on top of it for section separation, not a
+// border line.
 QString panelControlsStyleSheet();
 
 } // namespace chrome

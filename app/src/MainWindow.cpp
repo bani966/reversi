@@ -9,6 +9,7 @@
 #include "reversi/analysis.hpp"
 #include "reversi/position.hpp"
 
+#include <QAbstractItemView>
 #include <QAction>
 #include <QBrush>
 #include <QCloseEvent>
@@ -26,8 +27,8 @@
 #include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSizePolicy>
 #include <QSplitter>
-#include <QStatusBar>
 #include <QStringList>
 #include <QVBoxLayout>
 
@@ -57,8 +58,8 @@ void applyWindowsCornerRounding(QWidget* window) {
 }
 #endif
 
-// Stylesheet pass only - QMenuBar/QMenu/QStatusBar stay real native widgets, just re-skinned
-// to match the board's dark, flat aesthetic instead of default Windows menu chrome. Built from
+// Stylesheet pass only - QMenuBar/QMenu stay real native widgets, just re-skinned to match the
+// board's dark, flat aesthetic instead of default Windows menu chrome. Built from
 // chrome::palette() (shared with BoardWidget's coordinate labels and TitleBarWidget) rather
 // than literal hex values, so all three can't drift out of sync with each other again.
 QString buildChromeStyleSheet() {
@@ -93,13 +94,6 @@ QString buildChromeStyleSheet() {
         }
         QMenu::item:selected {
             background-color: %3;
-        }
-        QStatusBar {
-            background-color: %1;
-            color: %2;
-            font-family: "Segoe UI";
-            font-weight: 500;
-            border: none;
         }
     )")
         .arg(theme.windowBackground.name()) // %1
@@ -141,26 +135,64 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     applyWindowsCornerRounding(this);
 #endif
 
-    // QMainWindow's own menuBar()/statusBar() dock automatically above/below whatever is set
-    // as the central widget - that would put them below our custom title bar, not above it. So
-    // the whole stack (title bar, menu, board, status bar) is built as ordinary child widgets
-    // in one layout and set as the central widget instead; menuBar_/statusBar_ stay real
-    // QMenuBar/QStatusBar (round 1's QSS still applies to them identically either way), just
-    // manually placed rather than using QMainWindow's docking convenience methods.
+    // QMainWindow's own menuBar() docks automatically above whatever is set as the central
+    // widget - that would put it below our custom title bar, not above it. So the whole stack
+    // (title bar, menu, board) is built as ordinary child widgets in one layout and set as the
+    // central widget instead; menuBar_ stays a real QMenuBar (round 1's QSS still applies to it
+    // identically either way), just manually placed rather than using QMainWindow's docking
+    // convenience methods. M10: the old QStatusBar is gone entirely, replaced by statusLabel_
+    // (below), a styled label scoped to board_'s own column rather than the whole window.
     titleBar_ = new TitleBarWidget(this);
     titleBar_->setTitle(windowTitle());
 
     menuBar_ = new QMenuBar(this);
     board_ = new BoardWidget(this);
-    statusBar_ = new QStatusBar(this);
+
+    // M10: replaces the old full-width QStatusBar - a styled, borderless pill matching board_'s
+    // own width (see boardColumn below), not generic OS status-bar chrome spanning the whole
+    // window including the panel column.
+    statusLabel_ = new QLabel(this);
+    statusLabel_->setAlignment(Qt::AlignCenter);
+    // Expanding (not the QLabel default of Preferred): lets the label stretch to fill whatever
+    // width it's given up to its maximumWidth cap below, instead of shrinking to its own text's
+    // sizeHint - see the maximumWidth comment for why this, not setFixedWidth, is load-bearing.
+    statusLabel_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    QFont statusFont = statusLabel_->font();
+    statusFont.setPointSize(statusFont.pointSize() + 1);
+    statusLabel_->setFont(statusFont);
+    statusLabel_->setStyleSheet(
+        QStringLiteral("QLabel {"
+                       "  background-color: %1;"
+                       "  color: %2;"
+                       "  border-radius: 6px;"
+                       "  padding: 8px;"
+                       "  font-family: \"Segoe UI\";"
+                       "}")
+            .arg(chrome::palette().popupBackground.name(), chrome::palette().textColor.name()));
+    // board_ itself is generally wider/taller than the square it actually draws (letterboxed to
+    // stay square - see BoardWidget::recomputeBoardGeometry()), so matching board_->width() alone
+    // would leave statusLabel_ wider than the visible board whenever the column isn't itself
+    // square. boardWidthChanged reports the real rendered square's side length instead.
+    //
+    // setMaximumWidth, deliberately NOT setFixedWidth: a fixed width sets minimumWidth too, and a
+    // QVBoxLayout's own minimum-size hint is the MAX of its children's minimum widths - that
+    // inflated boardColumn's (and transitively the whole window's) minimum size every time the
+    // board was drawn larger, and never shrank back down, since Qt won't auto-shrink an
+    // already-open window just because a child's minimum decreased. The practical symptom: after
+    // maximizing once, restoring back down got silently clamped to the inflated minimum -
+    // "resizing" appeared to stop working entirely. maximumWidth alone caps growth without touching
+    // minimumSizeHint at all, so it can't ratchet.
+    connect(board_, &BoardWidget::boardWidthChanged, statusLabel_,
+            [this](int boardPixels) { statusLabel_->setMaximumWidth(boardPixels); });
 
     // M9 phase 1: side panel (phases 3-5 populate: analysis panel, move history, and - phase 5 -
-    // a real border/radius). A QFrame, not a plain QWidget - see MainWindow.hpp's own comment on
-    // panel_ for why (Qt::WA_StyledBackground/QFrame is what makes an explicit QSS background/
-    // border actually paint; a bare QWidget's own background otherwise defaults to Qt's system
-    // palette, unstyled, which is what phase 1 originally worked around a different way, via
-    // setAutoFillBackground - the M9 phase 5 QFrame#sidePanel selector in
-    // chrome::panelControlsStyleSheet() replaces that palette-based fill entirely).
+    // a real radius; M10 drops the border it briefly had, see Palette.hpp). A QFrame, not a plain
+    // QWidget - see MainWindow.hpp's own comment on panel_ for why (Qt::WA_StyledBackground/
+    // QFrame is what makes an explicit QSS background actually paint; a bare QWidget's own
+    // background otherwise defaults to Qt's system palette, unstyled, which is what phase 1
+    // originally worked around a different way, via setAutoFillBackground - the M9 phase 5
+    // QFrame#sidePanel selector in chrome::panelControlsStyleSheet() replaces that palette-based
+    // fill entirely).
     panel_ = new QFrame(this);
     panel_->setObjectName(QStringLiteral("sidePanel"));
     // A bare QWidget/QFrame has no usable sizeHint() for layout purposes; without an explicit
@@ -173,14 +205,33 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // on all four sides (originally left-only, matching panel_'s own 12px internal content
     // margin so the board didn't sit flush against the window while the panel's content had a
     // visible inset - see git history) now also serve a second purpose as of M9 phase 5: panel_
-    // has a real border+radius (QFrame#sidePanel, chrome::panelControlsStyleSheet()), which is
+    // has a real radius (QFrame#sidePanel, chrome::panelControlsStyleSheet()), which is
     // otherwise invisible - flush against the window's edges and directly adjacent to board_
     // with zero spacing, there is no background visible behind any of its corners for the
     // rounding to show against.
+    //
+    // M10: board_ and statusLabel_ are stacked in their own column (boardColumn) so the status
+    // pill sits directly under the board, matching the board's own width - not the old QStatusBar,
+    // which spanned the whole window including the panel column.
+    auto* boardColumn = new QVBoxLayout();
+    boardColumn->setContentsMargins(0, 0, 0, 0);
+    boardColumn->setSpacing(8);
+    boardColumn->addWidget(board_, 1);
+    // A stretch-flanked QHBoxLayout, not Qt::AlignHCenter on addWidget: AlignHCenter would size
+    // statusLabel_ to its own sizeHint (its text's natural width) and ignore the Expanding size
+    // policy set above entirely, defeating the whole point of letting it stretch up to
+    // maximumWidth. Two stretches either side of the label center it correctly whether or not the
+    // maximumWidth cap is currently active, without touching alignment/sizeHint semantics at all.
+    auto* statusRow = new QHBoxLayout();
+    statusRow->addStretch(1);
+    statusRow->addWidget(statusLabel_);
+    statusRow->addStretch(1);
+    boardColumn->addLayout(statusRow);
+
     auto* boardRow = new QHBoxLayout();
     boardRow->setContentsMargins(12, 12, 12, 12);
     boardRow->setSpacing(12);
-    boardRow->addWidget(board_, 1);
+    boardRow->addLayout(boardColumn, 1);
     boardRow->addWidget(panel_);
 
     auto* container = new QWidget(this);
@@ -199,7 +250,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     layout->addWidget(titleBar_);
     layout->addWidget(menuBar_);
     layout->addLayout(boardRow, 1);
-    layout->addWidget(statusBar_);
     setCentralWidget(container);
 
     connect(titleBar_, &TitleBarWidget::minimizeRequested, this, &QWidget::showMinimized);
@@ -216,7 +266,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(controller_, &GameController::boardChanged, board_, &BoardWidget::setDisplayState);
     connect(board_, &BoardWidget::squareClicked, controller_, &GameController::onSquareClicked);
     connect(controller_, &GameController::statusChanged, this, [this](const QString& text) {
-        statusBar_->showMessage(text);
+        statusLabel_->setText(text);
         // canAnalyze() flips to false the instant the AI starts thinking, which happens inside
         // startAiSearch() before its own statusChanged emit (see that function's own comment) -
         // catching it here, not just on boardChanged, is what actually disables the button in
@@ -371,7 +421,12 @@ void MainWindow::createMenus() {
 
 // M9 phase 5: panel_'s two sections (move history, analysis) live in a vertical QSplitter so
 // each list-like section (a growing move list; a growing MultiPV results list) can be resized by
-// the user rather than fighting over a fixed stacked-layout split.
+// the user rather than fighting over a fixed stacked-layout split. M10: a fixed bottom toolbar
+// row (setupPanelToolbar()) sits below the splitter - chess.com's own flag/undo/lightbulb row -
+// and analysisPane_ now starts hidden, toggled open/closed by that row's "Analysis" button rather
+// than always occupying its own permanent splitter section. analysisPane_ is added to the
+// splitter FIRST (top), move history second - so expanding Analysis makes it appear above the
+// move list, directly over the toolbar button that opened it, not below.
 void MainWindow::setupPanelContent() {
     panel_->setStyleSheet(chrome::panelControlsStyleSheet());
 
@@ -380,9 +435,13 @@ void MainWindow::setupPanelContent() {
     layout->setSpacing(0);
 
     auto* splitter = new QSplitter(Qt::Vertical, panel_);
+    analysisPane_ = setupAnalysisPanel();
+    analysisPane_->setVisible(false);
+    splitter->addWidget(analysisPane_);
     splitter->addWidget(setupMoveHistoryPanel());
-    splitter->addWidget(setupAnalysisPanel());
-    layout->addWidget(splitter);
+    layout->addWidget(splitter, 1);
+
+    layout->addWidget(setupPanelToolbar());
 }
 
 // M9 phase 5: move-history list - a missed item from the original spec (alongside undo/redo and
@@ -390,7 +449,17 @@ void MainWindow::setupPanelContent() {
 // currentHistoryIndex() exactly - no new history tracking here, this widget only ever displays
 // what GameController already owns.
 QWidget* MainWindow::setupMoveHistoryPanel() {
-    auto* pane = new QWidget(panel_);
+    // M10: a QFrame with its own subtle background (one shade lighter than panel_'s own base),
+    // not a plain transparent QWidget - "sections separated by shading, not borders/blocky
+    // elements" (chess.com's own panel convention, per the user's own framing) is delivered by
+    // this shading contrast alone, no border anywhere.
+    auto* pane = new QFrame(panel_);
+    pane->setObjectName(QStringLiteral("moveHistoryPane"));
+    pane->setStyleSheet(QStringLiteral("QFrame#moveHistoryPane {"
+                                       "  background-color: %1;"
+                                       "  border-radius: 6px;"
+                                       "}")
+                            .arg(chrome::palette().popupBackground.name()));
     auto* layout = new QVBoxLayout(pane);
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(8);
@@ -403,6 +472,15 @@ QWidget* MainWindow::setupMoveHistoryPanel() {
     layout->addWidget(headerLabel);
 
     moveHistoryList_ = new QListWidget(pane);
+    // M10: bigger rows, per the user's request - both a larger base font and taller per-item
+    // padding (the font bump alone doesn't grow the row height without also giving it more
+    // padding to sit in).
+    QFont listFont = moveHistoryList_->font();
+    listFont.setPointSize(listFont.pointSize() + 2);
+    moveHistoryList_->setFont(listFont);
+    moveHistoryList_->setStyleSheet(
+        QStringLiteral("QListWidget { border: none; background: transparent; }"
+                       "QListWidget::item { padding: 6px 4px; }"));
     // itemClicked (not currentRowChanged): only fires on a genuine mouse click, unlike
     // currentRowChanged, which would also fire from updateMoveHistoryList()'s own programmatic
     // setCurrentRow()-equivalent state below, creating a needless feedback loop.
@@ -443,13 +521,37 @@ void MainWindow::updateMoveHistoryList() {
         }
         moveHistoryList_->addItem(item);
     }
+
+    // M10: always scroll to keep the current entry visible, rather than special-casing "a move
+    // was added" vs. "a move was undone" separately - a live move appends and the new current
+    // entry is the new last one (scrolls down), an undo/jump lands earlier in the list (scrolls
+    // back up if it had fallen out of view), and this one rule covers both correctly.
+    // fullMoveList()[currentIndex - 1] is the current entry's row (see the loop above); at
+    // currentIndex == 0 (the start position) there's no item to scroll to, so just show the top.
+    if (currentIndex > 0) {
+        if (QListWidgetItem* currentItem =
+                moveHistoryList_->item(static_cast<int>(currentIndex) - 1)) {
+            moveHistoryList_->scrollToItem(currentItem, QAbstractItemView::EnsureVisible);
+        }
+    } else {
+        moveHistoryList_->scrollToTop();
+    }
 }
 
 // M9 phase 3: on-demand MultiPV analysis of the CURRENT position - "Analyze Position" ranks
 // candidate moves plus a principal variation for the top line. Builds and returns its own pane
 // widget (M9 phase 5: previously built directly into panel_ before panel_ grew a second section).
+// M10: starts hidden - toggled by the "Analysis" pill in setupPanelToolbar() (see
+// setupPanelContent()) - everything below is otherwise completely unchanged from M9.
 QWidget* MainWindow::setupAnalysisPanel() {
-    auto* pane = new QWidget(panel_);
+    // Same shaded-QFrame treatment as the move-history pane - see that function's own comment.
+    auto* pane = new QFrame(panel_);
+    pane->setObjectName(QStringLiteral("analysisPane"));
+    pane->setStyleSheet(QStringLiteral("QFrame#analysisPane {"
+                                       "  background-color: %1;"
+                                       "  border-radius: 6px;"
+                                       "}")
+                            .arg(chrome::palette().popupBackground.name()));
     auto* layout = new QVBoxLayout(pane);
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(8);
@@ -470,9 +572,16 @@ QWidget* MainWindow::setupAnalysisPanel() {
     // M9 phase 5: a scroll area over a plain QVBoxLayout of row widgets - renderAnalysisResults()
     // clears and rebuilds analysisResultsLayout_'s children on every call (see that function's
     // own doc comment for why this replaced a single QPlainTextEdit).
+    // M10: QScrollArea (and its internal viewport widget, which needs its OWN stylesheet - setting
+    // one on the QScrollArea alone doesn't reach it) paints an opaque Fusion-style palette
+    // background by default, which doesn't match analysisPane_'s popupBackground fill - flagged as
+    // a visibly mismatched background around the ranked-move cards. Making both transparent lets
+    // the pane's own shading show through instead.
     auto* resultsScroll = new QScrollArea(pane);
     resultsScroll->setWidgetResizable(true);
     resultsScroll->setFrameShape(QFrame::NoFrame);
+    resultsScroll->setStyleSheet(QStringLiteral("QScrollArea { background: transparent; }"));
+    resultsScroll->viewport()->setStyleSheet(QStringLiteral("background: transparent;"));
     auto* resultsContent = new QWidget(resultsScroll);
     analysisResultsLayout_ = new QVBoxLayout(resultsContent);
     analysisResultsLayout_->setContentsMargins(0, 0, 0, 0);
@@ -504,6 +613,58 @@ QWidget* MainWindow::setupAnalysisPanel() {
             [this](const BoardWidget::DisplayState&) { updateAnalyzeButtonEnabled(); });
 
     return pane;
+}
+
+// M10: panel_'s fixed bottom row, mirroring the board's own statusLabel_ (MainWindow.cpp's
+// constructor) rather than chess.com's small icon-toolbar buttons - a full-width, centered bar
+// styled identically to that status pill, "matching the info panel below the board" per the
+// explicit feedback that prompted this revision. Today this only holds the "Analysis" toggle
+// (analysisPane_'s show/hide switch, wired here); a plain QHBoxLayout leaves room for more
+// buttons alongside it later without restructuring anything.
+QWidget* MainWindow::setupPanelToolbar() {
+    auto* bar = new QWidget(panel_);
+    auto* barLayout = new QHBoxLayout(bar);
+    barLayout->setContentsMargins(12, 8, 12, 12);
+    barLayout->setSpacing(8);
+
+    const chrome::Palette& theme = chrome::palette();
+    auto* analysisToggle = new QPushButton(QStringLiteral("Analysis"), bar);
+    analysisToggle->setObjectName(QStringLiteral("toolbarButton"));
+    analysisToggle->setCheckable(true);
+    // M10 (revised): a full-width bar spanning the panel, styled identically to statusLabel_
+    // (same popupBackground fill, same 6px radius) rather than a small standalone pill off to one
+    // side - "shouldn't be standalone... match the info panel below the board" was the explicit
+    // feedback on the first version of this control. :checked still gets an accentColor fill so
+    // the open/closed state is visible at a glance (the same "one thing gets emphasis" accentColor
+    // already uses elsewhere - MultiPV's top-line badge, the move-history current-row indicator).
+    analysisToggle->setStyleSheet(QStringLiteral("QPushButton#toolbarButton {"
+                                                 "  background-color: %1;"
+                                                 "  color: %2;"
+                                                 "  border-radius: 6px;"
+                                                 "  padding: 8px;"
+                                                 "  font-family: \"Segoe UI\";"
+                                                 "  font-weight: 600;"
+                                                 "}"
+                                                 "QPushButton#toolbarButton:hover {"
+                                                 "  background-color: %3;"
+                                                 "}"
+                                                 "QPushButton#toolbarButton:checked {"
+                                                 "  background-color: %4;"
+                                                 "  color: %5;"
+                                                 "}")
+                                      .arg(theme.popupBackground.name(), theme.textColor.name(),
+                                           theme.panelHover.name(), theme.accentColor.name(),
+                                           theme.windowBackground.name()));
+    // Only toggles visibility - GameController's analysisFinished/canAnalyze() wiring inside
+    // analysisPane_ (setupAnalysisPanel(), above) is completely untouched; clicking "Analyze
+    // Position" inside the revealed section still triggers the real analysis exactly as before.
+    connect(analysisToggle, &QPushButton::toggled, this,
+            [this](bool checked) { analysisPane_->setVisible(checked); });
+    // Stretch 1, no trailing addStretch: fills the toolbar row's full width (panel_'s own width,
+    // matching the ask directly) instead of shrinking to its own text.
+    barLayout->addWidget(analysisToggle, 1);
+
+    return bar;
 }
 
 void MainWindow::updateAnalyzeButtonEnabled() {
