@@ -19,4 +19,87 @@ const Palette& palette() {
     return kPalette;
 }
 
+QString panelControlsStyleSheet() {
+    const Palette& theme = palette();
+    return QStringLiteral(R"(
+        QFrame#sidePanel {
+            background-color: %1;
+            border: 1px solid %3;
+            border-radius: 8px;
+        }
+        QPushButton {
+            background-color: %1;
+            color: %2;
+            border: 1px solid %3;
+            border-radius: 4px;
+            padding: 8px;
+            font-family: "Segoe UI";
+            font-weight: 600;
+        }
+        QPushButton:hover:enabled {
+            background-color: %4;
+        }
+        QPushButton:disabled {
+            color: %3;
+        }
+        QLabel {
+            color: %2;
+            font-family: "Segoe UI";
+        }
+        QGroupBox {
+            background-color: %1;
+            border: 1px solid %3;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-family: "Segoe UI";
+            font-weight: 600;
+            padding-top: 8px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            left: 8px;
+            padding: 0 4px;
+            color: %2;
+        }
+        QCheckBox {
+            color: %2;
+            font-family: "Segoe UI";
+            spacing: 8px;
+        }
+        QCheckBox::indicator {
+            width: 14px;
+            height: 14px;
+            border: 1px solid %3;
+            border-radius: 3px;
+            background-color: %5;
+        }
+        QCheckBox::indicator:checked {
+            background-color: %6;
+            border: 1px solid %6;
+        }
+        QCheckBox::indicator:disabled {
+            border: 1px solid %3;
+            background-color: %1;
+        }
+        QSpinBox {
+            background-color: %5;
+            color: %2;
+            border: 1px solid %3;
+            border-radius: 4px;
+            padding: 4px;
+            font-family: "Segoe UI";
+        }
+    )")
+        .arg(theme.popupBackground.name())  // %1
+        .arg(theme.textColor.name())        // %2
+        .arg(theme.panelBorder.name())      // %3
+        .arg(theme.panelHover.name())       // %4
+        .arg(theme.windowBackground.name()) // %5 - recessed control fill, one shade darker
+                                            // than the surrounding card (%1)
+        .arg(theme.accentColor.name());     // %6 - checked checkbox fill, the same solid
+                                            // emphasis color used elsewhere (MultiPV top-line
+                                            // badge, move-history current-row indicator)
+}
+
 } // namespace chrome

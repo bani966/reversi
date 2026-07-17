@@ -109,48 +109,6 @@ QString buildChromeStyleSheet() {
         .arg(theme.panelBorder.name());     // %5
 }
 
-// M9 phase 3: a light styling pass on the analysis panel's own widgets (QPushButton/QLabel/
-// QPlainTextEdit aren't covered by buildChromeStyleSheet() above, which only targets
-// QMenuBar/QMenu/QStatusBar) - reuses the same chrome::palette() roles so the panel reads as
-// part of the app's existing dark chrome rather than default Qt widget styling. A full
-// chess.com-style visual match (rounded cards, the exact reference layout) is phase 5's
-// dedicated visual-parity pass, not attempted here.
-QString buildAnalysisPanelStyleSheet() {
-    const chrome::Palette& theme = chrome::palette();
-    return QStringLiteral(R"(
-        QPushButton {
-            background-color: %1;
-            color: %2;
-            border: 1px solid %3;
-            border-radius: 4px;
-            padding: 8px;
-            font-family: "Segoe UI";
-            font-weight: 600;
-        }
-        QPushButton:hover:enabled {
-            background-color: %4;
-        }
-        QPushButton:disabled {
-            color: %3;
-        }
-        QLabel {
-            color: %2;
-            font-family: "Segoe UI";
-        }
-        QPlainTextEdit {
-            background-color: %1;
-            color: %2;
-            border: 1px solid %3;
-            border-radius: 4px;
-            padding: 6px;
-        }
-    )")
-        .arg(theme.popupBackground.name()) // %1
-        .arg(theme.textColor.name())       // %2
-        .arg(theme.panelBorder.name())     // %3
-        .arg(theme.panelHover.name());     // %4
-}
-
 // "10094917" reads as clutter and doesn't fit the analysis panel's fixed ~300px width on one
 // line at a readable font size; "10.1M" is both more compact and the conventional way engine
 // node counts get displayed.
@@ -189,33 +147,32 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     board_ = new BoardWidget(this);
     statusBar_ = new QStatusBar(this);
 
-    // M9 phase 1: empty placeholder for the side panel phases 3-4 populate (analysis panel, move
-    // history, settings). An explicit background is a correctness fix, not decoration - every
-    // pixel of the window was previously covered by titleBar_/menuBar_/board_/statusBar_, so a
-    // bare QWidget's default (unpainted) background has never been exercised before; without
-    // this it would show through to Qt's default system palette, reading as a rendering bug next
-    // to the app's otherwise uniformly dark chrome. Reuses windowBackground - the same role
-    // titleBar_/menuBar_/statusBar_ already share - rather than introducing a new color.
-    panel_ = new QWidget(this);
-    panel_->setAutoFillBackground(true);
-    QPalette panelPalette = panel_->palette();
-    panelPalette.setColor(QPalette::Window, chrome::palette().windowBackground);
-    panel_->setPalette(panelPalette);
-    // A bare QWidget has no usable sizeHint() for layout purposes; without an explicit minimum
-    // the QHBoxLayout below would collapse it to zero width. 300px is a first-pass placeholder
-    // loosely sized on chess.com's own side-panel width - not load-bearing, revisited in phase 5.
+    // M9 phase 1: side panel (phases 3-5 populate: analysis panel, move history, and - phase 5 -
+    // a real border/radius). A QFrame, not a plain QWidget - see MainWindow.hpp's own comment on
+    // panel_ for why (Qt::WA_StyledBackground/QFrame is what makes an explicit QSS background/
+    // border actually paint; a bare QWidget's own background otherwise defaults to Qt's system
+    // palette, unstyled, which is what phase 1 originally worked around a different way, via
+    // setAutoFillBackground - the M9 phase 5 QFrame#sidePanel selector in
+    // chrome::panelControlsStyleSheet() replaces that palette-based fill entirely).
+    panel_ = new QFrame(this);
+    panel_->setObjectName(QStringLiteral("sidePanel"));
+    // A bare QWidget/QFrame has no usable sizeHint() for layout purposes; without an explicit
+    // minimum the QHBoxLayout below would collapse it to zero width. 300px is a first-pass
+    // placeholder loosely sized on chess.com's own side-panel width - not load-bearing.
     panel_->setMinimumWidth(300);
 
     // board_ keeps the stretch factor so it - not panel_ - absorbs extra space on resize,
-    // mirroring how board_ already gets stretch 1 vertically in the outer layout below. Left
-    // margin matches the 12px margin each of panel_'s own sub-panes uses internally
-    // (setupMoveHistoryPanel()/setupAnalysisPanel()) so the board's left edge sits the same
-    // distance from the window border as the panel's content does from the window's right
-    // border - without this, the board sat flush against the left edge while the panel's content
-    // had a visible 12px inset on the right, reading as unbalanced.
+    // mirroring how board_ already gets stretch 1 vertically in the outer layout below. Margins
+    // on all four sides (originally left-only, matching panel_'s own 12px internal content
+    // margin so the board didn't sit flush against the window while the panel's content had a
+    // visible inset - see git history) now also serve a second purpose as of M9 phase 5: panel_
+    // has a real border+radius (QFrame#sidePanel, chrome::panelControlsStyleSheet()), which is
+    // otherwise invisible - flush against the window's edges and directly adjacent to board_
+    // with zero spacing, there is no background visible behind any of its corners for the
+    // rounding to show against.
     auto* boardRow = new QHBoxLayout();
-    boardRow->setContentsMargins(12, 0, 0, 0);
-    boardRow->setSpacing(0);
+    boardRow->setContentsMargins(12, 12, 12, 12);
+    boardRow->setSpacing(12);
     boardRow->addWidget(board_, 1);
     boardRow->addWidget(panel_);
 
@@ -409,7 +366,7 @@ void MainWindow::createMenus() {
 // each list-like section (a growing move list; a growing MultiPV results list) can be resized by
 // the user rather than fighting over a fixed stacked-layout split.
 void MainWindow::setupPanelContent() {
-    panel_->setStyleSheet(buildAnalysisPanelStyleSheet());
+    panel_->setStyleSheet(chrome::panelControlsStyleSheet());
 
     auto* layout = new QVBoxLayout(panel_);
     layout->setContentsMargins(0, 0, 0, 0);

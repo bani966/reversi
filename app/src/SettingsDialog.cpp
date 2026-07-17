@@ -1,6 +1,7 @@
 #include "SettingsDialog.hpp"
 
 #include "GameController.hpp"
+#include "Palette.hpp"
 
 #include "reversi/search.hpp"
 
@@ -17,6 +18,10 @@
 SettingsDialog::SettingsDialog(GameController* controller, QWidget* parent)
     : QDialog(parent), controller_(controller) {
     setWindowTitle(QStringLiteral("Settings"));
+    // M9 phase 5: previously entirely unstyled (bare Fusion defaults) - the same shared
+    // stylesheet panel_ uses (MainWindow.cpp), so this dialog's QGroupBox/QCheckBox/QPushButton/
+    // QSpinBox/QLabel controls can't drift out of sync with the rest of the app's chrome.
+    setStyleSheet(chrome::panelControlsStyleSheet());
 
     auto* layout = new QVBoxLayout(this);
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QColor>
+#include <QString>
 
 // Shared chrome color roles for app/ (Qt widgets only - engine/ has nothing to do with this).
 // BoardWidget's own board-specific colors (felt green, disc fills, grid lines) stay local to
@@ -28,5 +29,14 @@ struct Palette {
 };
 
 const Palette& palette();
+
+// M9 phase 5: shared QSS for every non-board panel control (QPushButton/QLabel/QGroupBox/
+// QCheckBox/QSpinBox) built from palette() above - one function so panel_'s analysis/move-
+// history panes and SettingsDialog (previously entirely unstyled) can't drift out of sync with
+// each other the way two independently-hand-copied stylesheets could. Controls (QPushButton,
+// QSpinBox) use a 4px radius; containers (QGroupBox, and panel_ itself via its own
+// QFrame#sidePanel selector, set by whichever caller applies this stylesheet) use 8px - the same
+// "cards vs. controls" radius hierarchy the MultiPV row cards (MainWindow.cpp) already use.
+QString panelControlsStyleSheet();
 
 } // namespace chrome

@@ -12,6 +12,7 @@ class BoardWidget;
 class GameController;
 class TitleBarWidget;
 class QCloseEvent;
+class QFrame;
 class QLabel;
 class QListWidget;
 class QMenuBar;
@@ -33,7 +34,11 @@ private:
     TitleBarWidget* titleBar_;
     QMenuBar* menuBar_;
     BoardWidget* board_;
-    QWidget* panel_; // M9 placeholder side panel - phase 3 gives it its first real content
+    // M9 phase 5: QFrame, not QWidget - a plain QWidget doesn't paint its own QSS background/
+    // border by default (Qt::WA_StyledBackground would be the other way to opt in; QFrame does
+    // it automatically, the same reason the MultiPV row cards are QFrames too), needed now that
+    // panel_ has a real border+radius via QFrame#sidePanel in chrome::panelControlsStyleSheet().
+    QFrame* panel_;
     QStatusBar* statusBar_;
     GameController* controller_;
 
