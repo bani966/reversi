@@ -886,6 +886,13 @@ sound, themes, installers, v1.0) is next.
   what makes this trivially correct - they all started at the same `setDisplayState()` call, so
   one progress value driving all of them is both accurate and leaves nothing that could go out of
   sync between squares.
+- (Not its own DEVLOG entry, folded in here for context: between phase 1 and phase 2, the board's
+  colors were retuned to chess.com's actual green and the chrome/panel/status-label/analysis-toggle
+  visual language got a coordinated tuning pass, including a real bug fix - `statusLabel_`'s width
+  was being matched to the board via `setFixedWidth()`, which also forces a *minimum* width; since
+  that value only ever grew as the board was drawn larger and never shrank back, it silently
+  ratcheted the whole window's minimum size upward on every maximize, breaking restore-to-normal.
+  Fixed with `setMaximumWidth()` instead, which caps growth without inflating the layout's minimum.)
 - Verified: 204/204 automated tests green (no new tests - `app/tests/` has exactly one
   QApplication-free file, and this is the same class of change - timer/paint-driven GUI behavior -
   as every other `GameController`/`BoardWidget` addition in M9, all of which were verified
@@ -896,3 +903,40 @@ sound, themes, installers, v1.0) is next.
   (no flip, as intended) and the move-history list already updated; a follow-up screenshot after
   the animation window elapsed showed the fully-settled, correct final position. User confirmed
   the animation reads well in real interactive use.
+
+### Phase 2: sound effects
+
+- Built: a single move-placement sound (`GameController::moveSound_`, a `QSoundEffect`), played
+  from `commitMove()` - the one shared point where a disc is actually placed, reached only from
+  `onSquareClicked()` (a human move) and `onAiSearchFinished()` (the AI's move), never from
+  undo/redo/jump (`restoreFromHistory()`, a "look, don't act" restore) or load/import
+  (`applyLoadedHistory()`, a discontinuous position swap) - so the sound plays exactly for real
+  move placements, with no extra call-site auditing needed to get that scoping right.
+- Real finding, worth recording in full since it cost real back-and-forth to isolate: the first
+  working version embedded the sound asset into the binary via Qt's resource system
+  (`qt_add_resources`, `qrc:/sounds/<file>`) - the standard, install-location-independent way to
+  ship a small fixed asset, and consistent with this project's "survive packaging" instincts
+  elsewhere. It produced no audible sound at all, with no crash and no error surfaced anywhere
+  visible. Diagnosed by instrumenting `QSoundEffect::statusChanged` (once qDebug() output was
+  confirmed to not reach a redirected shell log for this `WIN32_EXECUTABLE` at all - Qt's default
+  Windows message handler doesn't write to an inherited-but-consoleless stderr the way a normal
+  console app's would; switched to writing straight to a file instead) - the same `qrc:` source,
+  both as a synthesized WAV and as a real MP3, reliably went straight to `QSoundEffect::Error`.
+  Pointing `QSoundEffect` at the *identical* file via a plain filesystem path (`QUrl::fromLocalFile`)
+  instead of `qrc:` loaded successfully (`Ready`) and played correctly - isolating the failure to
+  `QSoundEffect`'s handling of Qt resource-system paths specifically on this machine's Multimedia
+  backend, not the audio device, not the file format, and not a crash.
+- Second, smaller finding in the same session: MP3 also failed via a plain filesystem path (unlike
+  WAV, which worked immediately) - `QSoundEffect` is documented as a low-latency short-sound-effect
+  player, and in practice on this machine only reliably loaded WAV, not MP3, regardless of source
+  mechanism. Settled on WAV as the shipped format for this reason, not a stylistic preference.
+- Fix: `app/CMakeLists.txt` copies `assets/move-self.wav` next to the built executable as a
+  `POST_BUILD` step (`copy_if_different`, so incremental rebuilds don't rewrite - and re-timestamp -
+  the file when the source asset hasn't changed); `GameController` resolves it at runtime via
+  `QCoreApplication::applicationDirPath() + "/move-self.wav"`. `assets/` (previously just a
+  `.gitkeep` placeholder since M0) now holds this one real shipped asset.
+- Verified: 204/204 automated tests green (no new tests - this is a real audio device/backend
+  interaction, not something meaningful to unit-test; manual listening is the only real
+  verification for "does a sound play," same reasoning `tests/data/README.md` already applies to
+  fixtures with no automatable correctness signal). Manually confirmed working end-to-end by the
+  user after the `qrc:` → filesystem-path fix and the MP3 → WAV format switch.

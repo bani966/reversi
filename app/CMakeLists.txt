@@ -29,6 +29,24 @@ target_link_libraries(reversi-app PRIVATE
     reversi_warnings
 )
 
+# M10 phase 2: the move-placement sound (GameController.cpp) started out embedded via Qt's
+# resource system (qt_add_resources), but QSoundEffect on this machine's Multimedia backend
+# reliably failed to load ANY qrc: source (status went straight to Error for both a plain WAV and
+# an MP3), while the exact same files loaded and played fine from a real filesystem path -
+# confirmed by direct testing, not assumed. Copying the asset next to the executable instead
+# (resolved at runtime via QCoreApplication::applicationDirPath(), see GameController.cpp) works
+# around that limitation. copy_if_different, not a plain copy, so incremental rebuilds don't
+# rewrite the file (and bump its timestamp) when the source asset hasn't changed.
+# WAV, not MP3: QSoundEffect is documented as a short-low-latency-effect player, and in practice
+# on this machine it played a WAV reliably but never got past a failed MP3 load - confirmed by
+# testing both, not assumed either.
+add_custom_command(TARGET reversi-app POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/../assets/move-self.wav"
+        "$<TARGET_FILE_DIR:reversi-app>/move-self.wav"
+    COMMENT "Copying move-placement sound asset next to reversi-app"
+)
+
 # Windows 11 DWM corner-rounding spike (MainWindow.cpp, Q_OS_WIN-guarded) - no-op on other
 # platforms since dwmapi is Windows-only.
 if(WIN32)

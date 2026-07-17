@@ -23,6 +23,8 @@ namespace reversi {
 class OpeningBook;
 } // namespace reversi
 
+class QSoundEffect;
+
 // The "thin controller/view-model": owns the game state and all turn-taking/rules
 // orchestration. BoardWidget only renders and reports clicks; it never touches reversi::
 // rules functions itself.
@@ -177,6 +179,11 @@ private:
     // relevant thing to highlight) - only newGame() and a fresh applyMove() touch this.
     int lastMoveSquare_ = -1;
     bool lastMoveHighlightEnabled_ = false;
+    // M10 phase 2: a single move-placement sound, played from commitMove() only - see that
+    // function's own comment for exactly which call paths do (and deliberately don't) trigger it.
+    // Owned via Qt parent-child (new QSoundEffect(this) in the constructor), like every other
+    // QObject member here - no manual cleanup needed.
+    QSoundEffect* moveSound_;
 
     // history_[0] is always the game's start position (Position::start() for a normal new game,
     // or an imported board for a position import); history_[historyIndex_] always exactly

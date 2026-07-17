@@ -7,11 +7,14 @@
 #include "reversi/mpc.hpp"
 #include "reversi/opening_book.hpp"
 
+#include <QCoreApplication>
 #include <QFile>
 #include <QIODevice>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QMetaObject>
+#include <QSoundEffect>
+#include <QUrl>
 
 #include <filesystem>
 #include <stdexcept>
@@ -33,7 +36,19 @@ GameController::GameController(QObject* parent)
     : QObject(parent),
       tt_(std::make_unique<reversi::TranspositionTable>(kTranspositionTableEntries)),
       solverTt_(std::make_unique<reversi::TranspositionTable>(kTranspositionTableEntries)),
-      analysisTt_(std::make_unique<reversi::TranspositionTable>(kTranspositionTableEntries)) {}
+      analysisTt_(std::make_unique<reversi::TranspositionTable>(kTranspositionTableEntries)) {
+    // M10 phase 2: a single move-placement sound. Loaded from a real file next to the executable
+    // (app/CMakeLists.txt copies assets/move-self.wav there as a post-build step), NOT from Qt's
+    // qrc: resource system - confirmed by direct testing that QSoundEffect on this machine's
+    // Multimedia backend reliably fails to load ANY qrc: source (status goes straight to Error),
+    // while the identical file loads and plays correctly from a plain filesystem path. WAV, not
+    // MP3, for the same reason - QSoundEffect played a WAV correctly but never got past a failed
+    // load for an MP3 source, confirmed by testing both.
+    moveSound_ = new QSoundEffect(this);
+    moveSound_->setSource(QUrl::fromLocalFile(QCoreApplication::applicationDirPath() +
+                                              QStringLiteral("/move-self.wav")));
+    moveSound_->setVolume(0.6f);
+}
 
 GameController::~GameController() {
     cancelAiSearch();
@@ -188,6 +203,13 @@ void GameController::commitMove(int square) {
     pos_ = reversi::applyMove(pos_, square);
     blackToMove_ = !blackToMove_;
     lastMoveSquare_ = square;
+    // M10 phase 2: commitMove() is the one shared point where a disc is actually placed - reached
+    // only from onSquareClicked() (a human's move) and onAiSearchFinished() (the AI's move), never
+    // from undo()/redo()/jumpToHistoryIndex() (restoreFromHistory(), a "look, don't act" restore)
+    // or loadGame()/importTranscript()/importPosition() (applyLoadedHistory(), a discontinuous
+    // position swap) - so the sound plays exactly for real move placements, nothing else, with no
+    // extra call-site auditing needed.
+    moveSound_->play();
 }
 
 void GameController::advanceTurn(bool animate) {
