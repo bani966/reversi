@@ -80,14 +80,27 @@ jobs:
       - name: Test
         run: ctest --preset ci-macos
       # M10 phase 5: packaging. Deploy step invokes macdeployqt via qt_generate_deploy_app_script()
-      # (app/CMakeLists.txt); the second, direct macdeployqt call below re-targets the already-
-      # deployed bundle purely to add its -dmg flag (qt_generate_deploy_app_script has no DMG
-      # option of its own) - install-qt-action puts Qt's bin/ (and macdeployqt) on PATH.
-      # Same absolute-prefix requirement as the Windows job's deploy step above.
+      # (app/CMakeLists.txt) - Reversi.app, not reversi-app.app, since OUTPUT_NAME is now set to
+      # "Reversi" on Apple (app/CMakeLists.txt). Same absolute-prefix requirement as the Windows
+      # job's deploy step above.
       - name: Deploy (macdeployqt)
         run: cmake --install build/release --prefix "${{ github.workspace }}/build/release/deploy"
+      # No paid Apple Developer ID (would need a $99/yr account + notarization), so this can never
+      # be a Gatekeeper-trusted signature - but an ad-hoc one ("-") is still required for the app
+      # to launch AT ALL on Apple Silicon: a completely unsigned bundle downloaded from the
+      # internet doesn't get the normal "unidentified developer" prompt, it gets a harder
+      # "is damaged and can't be opened" block that right-click-Open does NOT clear (discovered by
+      # the user's own first real macOS test - see README's macOS Installing note for the manual
+      # xattr fallback this doesn't cover: a from-the-web quarantine flag on top of even an ad-hoc
+      # signature can still occasionally need it).
+      - name: Ad-hoc code-sign
+        run: codesign --force --deep --sign - "build/release/deploy/Reversi.app"
       - name: Package DMG
-        run: macdeployqt build/release/deploy/reversi-app.app -dmg
+        # Direct hdiutil instead of a second macdeployqt -dmg call (the previous approach) - a
+        # second deploy pass isn't needed once cmake --install already ran macdeployqt once above,
+        # and running it again risked re-touching (and un-signing) the bundle after the codesign
+        # step just above.
+        run: hdiutil create -volname Reversi -srcfolder "build/release/deploy/Reversi.app" -ov -format UDZO "build/release/deploy/Reversi.dmg"
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:

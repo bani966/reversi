@@ -27,22 +27,27 @@ step, and every real bug found along the way).
 
 ## Installing
 
-Prebuilt packages for both platforms are attached to each release on the
-[Releases](https://github.com/bani966/reversi/releases) page.
+Prebuilt packages for both platforms are produced by every green CI run, downloadable as build
+artifacts: open the repo's **Actions** tab, click the latest successful **CI** run, and scroll to
+the **Artifacts** section at the bottom of that run's summary page (GitHub always wraps each
+artifact in its own `.zip`, regardless of the file type inside).
 
 ### Windows
 
-Download either `reversi-<version>-windows-setup.exe` (installer — Start Menu shortcut,
-uninstaller) or `reversi-<version>-windows-portable.zip` (portable — unzip anywhere, run
-`bin\reversi-app.exe`). Both are **unsigned** (no code-signing certificate) — Windows SmartScreen
-will show "Windows protected your PC" on first run. This is expected, not a bug: click
-"More info" → "Run anyway" to proceed.
+Download either `reversi-windows-installer` (an installer — Start Menu shortcut, uninstaller) or
+`reversi-windows-portable` (unzip anywhere, run `bin\reversi-app.exe`). Both are **unsigned** (no
+code-signing certificate) — Windows SmartScreen will show "Windows protected your PC" on first
+run. This is expected, not a bug: click "More info" → "Run anyway" to proceed.
 
 ### macOS
 
-Download `reversi-app.dmg`, open it, and drag Reversi to Applications. The app is **unsigned and
-not notarized** — Gatekeeper will refuse to open it normally on first launch. Right-click (or
-Control-click) the app → "Open" → "Open" in the confirmation dialog; this is only needed once.
+Download `reversi-macos-dmg`, open the `.dmg` inside, and drag Reversi to Applications. The app is
+ad-hoc code-signed (no paid Apple Developer ID, so it's still **not notarized**) — Gatekeeper will
+refuse to open it normally on first launch. Right-click (or Control-click) the app → "Open" →
+"Open" in the confirmation dialog; this is only needed once. If that still reports the app as
+"damaged and can't be opened" rather than showing the override dialog (a harder Gatekeeper block
+that a from-the-web quarantine flag can trigger even on an ad-hoc-signed app), clear the
+quarantine flag manually instead: `xattr -cr /Applications/Reversi.app` in Terminal.
 
 ## Building
 

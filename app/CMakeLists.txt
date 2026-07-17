@@ -72,7 +72,21 @@ set_target_properties(reversi-app PROPERTIES
     WIN32_EXECUTABLE ON
     MACOSX_BUNDLE ON
     MACOSX_BUNDLE_ICON_FILE reversi.icns
+    # CFBundleName - without this it defaults to the CMake target name ("reversi-app"), which is
+    # what actually showed up as the app's displayed name (menu bar, Force Quit, Spotlight) before
+    # this was set; discovered only once someone actually launched a packaged build, since the
+    # dev workflow never surfaces Info.plist's contents.
+    MACOSX_BUNDLE_BUNDLE_NAME "Reversi"
 )
+
+# Also rename the bundle/executable itself on macOS ("Reversi.app", Contents/MacOS/Reversi) rather
+# than just the Info.plist's internal name above - Finder's Applications-folder label and the DMG
+# volume come from this, not from MACOSX_BUNDLE_BUNDLE_NAME. Windows-only reversi-app.exe naming
+# (win_resources.rc, packaging/windows/reversi.iss.in, CI) is untouched by keeping this Apple-only
+# rather than applying it to the target unconditionally.
+if(APPLE)
+    set_target_properties(reversi-app PROPERTIES OUTPUT_NAME "Reversi")
+endif()
 
 # M10 phase 5: packaging. Every dev-machine workaround this project has needed so far (prepending
 # Qt's bin/ to PATH before running ctest/launching reversi-app.exe directly, documented in the
