@@ -15,6 +15,7 @@
 #include <QEvent>
 #include <QFileDialog>
 #include <QFont>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
@@ -23,8 +24,8 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPalette>
-#include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QStringList>
@@ -502,16 +503,23 @@ QWidget* MainWindow::setupAnalysisPanel() {
     analysisStatusLabel_ = new QLabel(QStringLiteral("Ready"), pane);
     layout->addWidget(analysisStatusLabel_);
 
-    analysisResultsView_ = new QPlainTextEdit(pane);
-    analysisResultsView_->setReadOnly(true);
-    analysisResultsView_->setPlaceholderText(
-        QStringLiteral("Click \"Analyze Position\" to rank candidate moves."));
-    // Fixed-pitch so the rank/move/score/depth columns line up - QPlainTextEdit's own default
-    // font is proportional, which reads as misaligned clutter with tabular data like this.
-    QFont monoFont(QStringLiteral("Consolas"));
-    monoFont.setStyleHint(QFont::Monospace);
-    analysisResultsView_->setFont(monoFont);
-    layout->addWidget(analysisResultsView_, 1);
+    // M9 phase 5: a scroll area over a plain QVBoxLayout of row widgets - renderAnalysisResults()
+    // clears and rebuilds analysisResultsLayout_'s children on every call (see that function's
+    // own doc comment for why this replaced a single QPlainTextEdit).
+    auto* resultsScroll = new QScrollArea(pane);
+    resultsScroll->setWidgetResizable(true);
+    resultsScroll->setFrameShape(QFrame::NoFrame);
+    auto* resultsContent = new QWidget(resultsScroll);
+    analysisResultsLayout_ = new QVBoxLayout(resultsContent);
+    analysisResultsLayout_->setContentsMargins(0, 0, 0, 0);
+    analysisResultsLayout_->setSpacing(8);
+    auto* placeholderLabel = new QLabel(
+        QStringLiteral("Click \"Analyze Position\" to rank candidate moves."), resultsContent);
+    placeholderLabel->setWordWrap(true);
+    analysisResultsLayout_->addWidget(placeholderLabel);
+    analysisResultsLayout_->addStretch(1);
+    resultsScroll->setWidget(resultsContent);
+    layout->addWidget(resultsScroll, 1);
 
     connect(analyzeButton_, &QPushButton::clicked, this, [this] {
         controller_->analyzePosition();
@@ -547,36 +555,118 @@ void MainWindow::updateAnalyzeButtonEnabled() {
     }
 }
 
+// M9 phase 5: rebuilt from a single QPlainTextEdit text block into real per-line row widgets
+// (buildAnalysisLineRow()) - a structural change to already-working, already-verified code, not
+// a color/font restyle, per the user's own framing of this step. The signal/slot boundary this
+// is called from (GameController::analysisFinished, connected in setupAnalysisPanel()) is
+// completely unchanged; only what happens inside this function changed. Clears every existing
+// child (row widgets, a placeholder label, the trailing stretch) and rebuilds from scratch each
+// call - simplest correct way to keep a variable-length row list in sync with each new result.
 void MainWindow::renderAnalysisResults(const std::vector<reversi::RankedMove>& lines,
                                        const std::vector<int>& pv, bool blackToMove) {
+    while (QLayoutItem* item = analysisResultsLayout_->takeAt(0)) {
+        delete item
+            ->widget(); // nullptr for the trailing stretch item; delete on nullptr is a no-op
+        delete item;
+    }
+
     if (lines.empty()) {
-        analysisResultsView_->setPlainText(QStringLiteral("No analysis result."));
+        auto* placeholderLabel = new QLabel(QStringLiteral("No analysis result."));
+        placeholderLabel->setWordWrap(true);
+        analysisResultsLayout_->addWidget(placeholderLabel);
+        analysisResultsLayout_->addStretch(1);
         return;
     }
-    QString text;
+
     for (std::size_t i = 0; i < lines.size(); ++i) {
-        const reversi::RankedMove& line = lines[i];
-        // RankedMove::score is mover-relative (analysis.hpp); the panel's own display convention
-        // is fixed instead, chess.com-style: positive favors White, negative favors Black,
-        // regardless of whose turn was actually analyzed.
-        const int displayScore = blackToMove ? -line.score : line.score;
-        const QString scoreText = displayScore > 0 ? QStringLiteral("+%1").arg(displayScore)
-                                                   : QString::number(displayScore);
-        text += QStringLiteral("%1. %2   %3   (depth %4, %5 nodes)\n")
-                    .arg(i + 1)
-                    .arg(QString::fromStdString(reversi::squareToString(line.move)))
-                    .arg(scoreText)
-                    .arg(line.depth)
-                    .arg(formatNodeCount(line.nodes));
-        if (i == 0 && !pv.empty()) {
-            QStringList pvSquares;
-            for (int move : pv) {
-                pvSquares << QString::fromStdString(reversi::squareToString(move));
-            }
-            text += QStringLiteral("    PV: %1\n").arg(pvSquares.join(QStringLiteral(" ")));
-        }
+        analysisResultsLayout_->addWidget(
+            buildAnalysisLineRow(static_cast<int>(i) + 1, lines[i], i == 0, pv, blackToMove));
     }
-    analysisResultsView_->setPlainText(text);
+    analysisResultsLayout_->addStretch(1);
+}
+
+QWidget* MainWindow::buildAnalysisLineRow(int rank, const reversi::RankedMove& line, bool isTopLine,
+                                          const std::vector<int>& pv, bool blackToMove) {
+    const chrome::Palette& theme = chrome::palette();
+
+    auto* card = new QFrame();
+    card->setObjectName(QStringLiteral("analysisLineCard"));
+    card->setStyleSheet(QStringLiteral("QFrame#analysisLineCard {"
+                                       "  background-color: %1;"
+                                       "  border: 1px solid %2;"
+                                       "  border-radius: 8px;"
+                                       "}")
+                            .arg(theme.popupBackground.name(), theme.panelBorder.name()));
+    auto* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(10, 8, 10, 8);
+    cardLayout->setSpacing(4);
+
+    // Top line: rank badge, move (bold), score.
+    auto* topRow = new QHBoxLayout();
+    topRow->setSpacing(8);
+
+    auto* rankBadge = new QLabel(QString::number(rank));
+    rankBadge->setAlignment(Qt::AlignCenter);
+    rankBadge->setFixedSize(20, 20);
+    // Rank 1 (the best line) gets the solid accent color; the rest share a neutral, muted badge -
+    // the same "one thing gets emphasis" principle accentColor's own Palette.hpp doc comment
+    // describes.
+    const QString badgeBackground = (isTopLine ? theme.accentColor : theme.panelBorder).name();
+    const QString badgeText = isTopLine ? theme.windowBackground.name() : theme.textColor.name();
+    rankBadge->setStyleSheet(QStringLiteral("background-color: %1; color: %2; border-radius: 10px; "
+                                            "font-weight: 600;")
+                                 .arg(badgeBackground, badgeText));
+    topRow->addWidget(rankBadge);
+
+    auto* moveLabel = new QLabel(QString::fromStdString(reversi::squareToString(line.move)));
+    QFont moveFont = moveLabel->font();
+    moveFont.setBold(true);
+    moveLabel->setFont(moveFont);
+    topRow->addWidget(moveLabel);
+    topRow->addStretch(1);
+
+    // RankedMove::score is mover-relative (analysis.hpp); the panel's own display convention is
+    // fixed instead, chess.com-style: positive favors White, negative favors Black, regardless of
+    // whose turn was actually analyzed.
+    const int displayScore = blackToMove ? -line.score : line.score;
+    const QString scoreText =
+        displayScore > 0 ? QStringLiteral("+%1").arg(displayScore) : QString::number(displayScore);
+    auto* scoreLabel = new QLabel(scoreText);
+    QFont scoreFont = scoreLabel->font();
+    scoreFont.setBold(true);
+    scoreLabel->setFont(scoreFont);
+    topRow->addWidget(scoreLabel);
+
+    cardLayout->addLayout(topRow);
+
+    // Dimmer meta line: depth/nodes.
+    auto* metaLabel = new QLabel(
+        QStringLiteral("depth %1 · %2 nodes").arg(line.depth).arg(formatNodeCount(line.nodes)));
+    QFont metaFont = metaLabel->font();
+    metaFont.setPointSize(qMax(metaFont.pointSize() - 1, 1));
+    metaLabel->setFont(metaFont);
+    metaLabel->setStyleSheet(
+        QStringLiteral("color: %1;").arg(theme.panelHover.lighter(160).name()));
+    cardLayout->addWidget(metaLabel);
+
+    // PV, top line only, its own dimmer line.
+    if (isTopLine && !pv.empty()) {
+        QStringList pvSquares;
+        for (int move : pv) {
+            pvSquares << QString::fromStdString(reversi::squareToString(move));
+        }
+        auto* pvLabel =
+            new QLabel(QStringLiteral("PV: %1").arg(pvSquares.join(QStringLiteral(" "))));
+        pvLabel->setWordWrap(true);
+        QFont pvFont = pvLabel->font();
+        pvFont.setPointSize(qMax(pvFont.pointSize() - 1, 1));
+        pvLabel->setFont(pvFont);
+        pvLabel->setStyleSheet(
+            QStringLiteral("color: %1;").arg(theme.panelHover.lighter(160).name()));
+        cardLayout->addWidget(pvLabel);
+    }
+
+    return card;
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
