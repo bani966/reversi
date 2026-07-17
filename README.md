@@ -4,9 +4,9 @@ A Reversi/Othello desktop application: a bitboard engine in pure C++20 with alph
 search, a perfect-play endgame solver, a WTHOR-trained pattern evaluation with
 Multi-ProbCut, and a minimalist Qt 6 Widgets GUI with live engine analysis.
 
-**Status: M9 complete — feature-complete GUI (save/load, undo/redo, import/export, AI vs AI,
-on-demand MultiPV analysis, settings, move history) built and visually polished on top of M8's
-Lazy SMP.**
+**Status: v1.0.0 — feature-complete GUI (save/load, undo/redo, import/export, AI vs AI,
+on-demand MultiPV analysis, settings, move history, piece-flip animation, sound, light/dark
+theme) packaged as a native Windows installer and macOS DMG.**
 Playable HvH/HvAI
 in the Qt GUI (M3), with the AI driven by iterative deepening + a transposition table + PVS +
 move ordering + aspiration windows on a wall-clock time budget (M4) — a measured, large
@@ -79,7 +79,33 @@ cards, `Palette.hpp`-routed colors) — plus a genuinely missed spec item caught
 that pass: a move-history list (reusing the same undo/redo restore path, not new state), and a
 structural rebuild of the MultiPV display from a monospace text block into real per-line row
 cards. See `DEVLOG.md` for the full per-phase writeups, including three real bugs manual GUI
-testing caught (not the automated suite) during phase 3 alone.
+testing caught (not the automated suite) during phase 3 alone. M10 (release, no time-box, same
+reviewed-phase practice as M9) adds the remaining polish and ships it. Phase 1 added piece-flip
+animation for captured discs (a shared `QVariantAnimation` rendering the classic squash-to-an-edge-
+on "coin flip," with the just-played square itself deliberately excluded so only real captures
+flip) — including a genuine design problem caught before implementation: a plain bitboard diff
+can't distinguish a real capture from `newGame()`'s central squares coincidentally changing color
+from whatever the previous game left there, so `GameController` threads an explicit `animate` flag
+through instead of inferring it. Phase 2 added a move-placement sound effect
+(`QSoundEffect`) — with a real, fully-diagnosed finding: the sound asset loaded via Qt's `qrc:`
+resource system silently failed on this machine's Multimedia backend (no crash, no visible error),
+while the identical file loaded and played correctly from a plain filesystem path; shipped as a WAV
+copied next to the executable at build time, resolved via `applicationDirPath()` at runtime.
+Phase 3 added a light/dark theme toggle (`chrome::ThemeManager`, routed through the same
+`Palette.hpp` every widget already read from since M3) — a direct test of that routing design that
+mostly passed (~15 call sites needed zero changes) but surfaced seven real, distinct rendering
+bugs only visible once a second theme actually existed (a cached-forever static palette snapshot,
+several theme-inverted color assumptions, a clipped group-box title, and a frameless-window
+resize-drag regression fixed along the way) — all caught by manual GUI testing, all recorded in
+`DEVLOG.md` rather than smoothed over. Phase 5 (this phase) packages the app for both platforms:
+Qt's own `qt_generate_deploy_app_script()` (windeployqt/macdeployqt via one CMake-native
+mechanism, replacing the manual PATH-prepend workaround used throughout development) backs a
+Windows Inno Setup installer plus a portable zip, and a macOS DMG — see Installing below.
+
+## Screenshots
+
+<!-- TODO: add screenshots/demo GIF here — board (light + dark theme), analysis panel, settings
+     dialog. -->
 
 ## Layout
 
@@ -90,6 +116,25 @@ testing caught (not the automated suite) during phase 3 alone.
 | `app/` | Qt 6 Widgets GUI. |
 | `tests/` | GoogleTest unit tests. |
 | `tools/` | WTHOR pipeline: dataset extraction, eval training, opening book building. |
+
+## Installing
+
+Prebuilt packages for both platforms are attached to each release on the
+[Releases](https://github.com/bani966/reversi/releases) page.
+
+### Windows
+
+Download either `reversi-<version>-windows-setup.exe` (installer — Start Menu shortcut,
+uninstaller) or `reversi-<version>-windows-portable.zip` (portable — unzip anywhere, run
+`bin\reversi-app.exe`). Both are **unsigned** (no code-signing certificate) — Windows SmartScreen
+will show "Windows protected your PC" on first run. This is expected, not a bug: click
+"More info" → "Run anyway" to proceed.
+
+### macOS
+
+Download `reversi-app.dmg`, open it, and drag Reversi to Applications. The app is **unsigned and
+not notarized** — Gatekeeper will refuse to open it normally on first launch. Right-click (or
+Control-click) the app → "Open" → "Open" in the confirmation dialog; this is only needed once.
 
 ## Building
 
@@ -127,7 +172,7 @@ ctest --preset ci-linux
 | M7 (done) | Multi-ProbCut | Measured equal-time strength gain; toggle off by default |
 | M8 (done*) | Lazy SMP | ≥3× nps on 8 threads; TSan clean; no strength regression at equal time |
 | M9 (done) | Feature complete | Undo/redo, save/load, import/export, settings, AI vs AI, analysis panel |
-| M10 | Release | Animations, sound, themes, installers, v1.0 |
+| M10 (done) | Release | Piece-flip animation, sound, light/dark theme, packaged installers, v1.0.0 |
 
 \* M8's engineering deliverable is complete, correct, and CI-verified (TSan-clean, nps clears the
 ≥3× target with real margin); the strength leg of its exit criterion is inconclusive, not
@@ -137,9 +182,34 @@ numbers and the open follow-up hypothesis.
 
 ## Benchmarks
 
-Exact endgame solver (`solveExact`, fastest-first + empty-region parity ordering, TT-backed),
-measured on this machine — see `tests/data/ffo_easy.txt` for the vendored FFO-format positions
-and their source, and `cli solve <board> <side>` to reproduce:
+All numbers below are measured on this dev machine (Intel i7-9700, 8 physical cores, no
+hyperthreading) unless noted otherwise; see `DEVLOG.md` for the full per-milestone writeups this
+section summarizes.
+
+### Rules-core correctness (M1)
+
+Perft from the start position (`tests/engine/perft_test.cpp`), matching published values —
+verified against https://aartbik.blogspot.com/2009/02/perft-for-reversi.html, which matches
+OEIS A052586:
+
+| Depth | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| Nodes | 4 | 12 | 56 | 244 | 1,396 | 8,200 | 55,092 | 390,216 |
+
+Also validated by differential fuzz testing against a naive reference move generator (mandatory
+from M1 on, per the testing policy above), not perft counts alone.
+
+### Search maturity (M4)
+
+A fixed-depth self-play gate: depth-12 matured search (iterative deepening + TT + PVS + move
+ordering + aspiration windows) vs. depth-10 plain alpha-beta baseline (M2) — **63–0**, a
+large, unambiguous gain, deterministic (fixed depths, not a time-budget match).
+
+### Exact endgame solver (M5)
+
+`solveExact` (fastest-first + empty-region parity ordering, TT-backed) matches every published
+score in the vendored FFO endgame test subset exactly — see `tests/data/ffo_easy.txt` for the
+positions and their source, and `cli solve <board> <side>` to reproduce:
 
 | Empty squares | Positions | Avg. time | Avg. nodes |
 |---|---|---|---|
@@ -157,6 +227,50 @@ conservative relative to this data and could reasonably be raised — left as-is
 explicit decision on the interactivity/strength tradeoff for GUI wiring, which M5 did not
 include.
 
+### Pattern evaluation + opening book (M6)
+
+The WTHOR-trained pattern evaluation (12 pattern shapes, ridge regression per game-phase bucket)
+measured **20/20** in self-play against disc-differential eval at equal search depth. Its
+`.wtb` parser/replay pipeline was stress-tested against 8,874 real tournament games (2016–2019)
+with zero illegal moves. The opening book built from 8,886 real tournament games (1977,
+2016–2019) produced **2,734 entries** and, spot-checked against known theory, recovers the
+documented main lines exactly (e.g. 1.f5 d6, the Diagonal Opening) — including a symmetry
+cross-check (1.c4 canonicalizes to the same book entry as 1.f5) confirmed correct on real data,
+not just unit tests.
+
+### Multi-ProbCut (M7)
+
+A fitted MPC model (1,500 self-played sampled positions, closed-form OLS per depth pair) measured
+a modest but real edge in a 20-game equal-time self-play match: **11–9** against MPC disabled.
+The first fitted configuration tested was actually a regression (too many eligible cut nodes
+relative to actual cuts taken) before landing on this one — recorded in `DEVLOG.md` rather than
+only reporting the number that worked.
+
+### Lazy SMP (M8)
+
+nps scaling by thread count (`cli bench 14 <threads>`, engine/CLI-level `searchLazySmp()`, not yet
+wired into GUI gameplay; sum-of-all-threads nps, so it counts Lazy SMP's redundant parallel
+exploration as real work — the honest framing for a design with no explicit work-splitting):
+
+| Threads | 1 | 2 | 4 | 8 |
+|---|---|---|---|---|
+| Avg. nps | ~5.48M | ~9.27M | ~18.36M | ~34.34M |
+
+Roughly **6.3×** at 8 threads vs. 1, clearing the ≥3× target with real margin. Strength is the
+honest exception: no statistically significant strength difference was detected between Lazy SMP
+and single-threaded search across three independent 20-game equal-time matches (60 games
+combined) — reported as genuinely inconclusive at this sample size, not a pass, and not a
+regression either. See the M8 paragraph above and `DEVLOG.md` for the full investigation.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Third-Party Notices
+
+- **Qt 6** (LGPLv3) — used under dynamic linking: the packaged builds ship Qt's DLLs/frameworks
+  as separate files alongside the executable (via `qt_generate_deploy_app_script()`, see
+  `app/CMakeLists.txt`), never statically linked, satisfying LGPLv3's relinking requirement.
+- **GoogleTest** (BSD-3-Clause) — test-only dependency (`tests/`, `app/tests/`,
+  `tools/wthor_extractor/`, `tools/mpc_fitter/`), fetched via CMake's `FetchContent`; never
+  linked into the shipped app, CLI, or engine.

@@ -58,6 +58,44 @@ set_target_properties(reversi-app PROPERTIES
     MACOSX_BUNDLE ON
 )
 
+# M10 phase 5: packaging. Every dev-machine workaround this project has needed so far (prepending
+# Qt's bin/ to PATH before running ctest/launching reversi-app.exe directly, documented in the
+# root CLAUDE.md) exists because nothing has ever actually deployed Qt's own DLLs/plugins
+# alongside the built binary - a real end user shouldn't need to do either of those things.
+# qt_generate_deploy_app_script() is Qt 6.3+'s own CMake-native answer to this: one call that
+# generates an install-time script invoking windeployqt on Windows and macdeployqt on macOS
+# automatically (whichever this configure is targeting) - one code path for both platforms
+# instead of two hand-rolled ones, and Qt's own recommended replacement for exactly this class of
+# manual-PATH workaround. `cmake --install <build-dir> --config Release --prefix <deploy-dir>`
+# then produces a fully self-contained folder: the exe/bundle, every Qt DLL/framework and platform
+# plugin (platforms, multimedia) it actually needs, and the sound asset below - this is what both
+# the Windows installer/portable-zip and the macOS DMG (packaging/, CI) get built from.
+#
+# RUNTIME DESTINATION bin, not `.` - confirmed by actually running the generated deploy script and
+# launching the result (no Qt on PATH): windeployqt's GENERATE_QT_CONF writes a qt.conf with
+# `Prefix = ..` next to the DLLs it deploys, i.e. it assumes the exe and the Qt DLLs sit together
+# in their own subdirectory with plugins/ one level up - installing the exe directly into the
+# prefix root left it looking for plugins/ in the wrong place entirely. macOS's BUNDLE DESTINATION
+# stays `.` - a .app bundle is already fully self-contained internally (Contents/MacOS,
+# Contents/Frameworks, ...), it doesn't use this bin/-plus-plugins/ layout at all.
+if(APPLE)
+    install(TARGETS reversi-app BUNDLE DESTINATION .)
+    # applicationDirPath() resolves to Contents/MacOS inside the bundle for a macOS app bundle,
+    # not the top-level .app folder - TARGET_BUNDLE_CONTENT_DIR is what actually reaches there.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../assets/move-self.wav"
+            DESTINATION "$<TARGET_BUNDLE_CONTENT_DIR:reversi-app>/MacOS")
+else()
+    install(TARGETS reversi-app RUNTIME DESTINATION bin)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../assets/move-self.wav" DESTINATION bin)
+endif()
+
+qt_generate_deploy_app_script(
+    TARGET reversi-app
+    OUTPUT_SCRIPT deploy_script
+    NO_TRANSLATIONS
+)
+install(SCRIPT ${deploy_script})
+
 # app_tests (M9 phase 2): GameNotation's pure JSON/transcript/board-string logic, tested
 # independently of the GUI - Qt6::Core only (no Widgets, no QApplication), so this binary has no
 # display-server dependency and stays fast. Own small test target, following the same "one test

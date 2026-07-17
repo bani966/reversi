@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(reversi VERSION 0.1.0 LANGUAGES CXX)
+project(reversi VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,4 +48,16 @@ endif()
 
 if(REVERSI_BUILD_TOOLS)
     add_subdirectory(tools)
+endif()
+
+# M10 phase 5: render the Inno Setup template so @PROJECT_VERSION@ never needs a manual bump at
+# release time - it already tracks this file's own project() version, the same single source of
+# truth cli/'s --version output uses. Windows-only (Inno Setup itself is Windows-only); harmless to
+# skip elsewhere since packaging/windows/reversi.iss is never referenced by any other target.
+if(WIN32 AND REVERSI_BUILD_APP)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/reversi.iss.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/packaging/windows/reversi.iss"
+        @ONLY
+    )
 endif()

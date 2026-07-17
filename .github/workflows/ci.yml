@@ -32,6 +32,31 @@ jobs:
         run: cmake --build --preset ci-windows
       - name: Test
         run: ctest --preset ci-windows
+      # M10 phase 5: packaging. Deploy step invokes windeployqt via qt_generate_deploy_app_script()
+      # (app/CMakeLists.txt) - one mechanism, no hand-rolled DLL copying.
+      - name: Deploy (windeployqt)
+        run: cmake --install build/msvc --config Release --prefix build/msvc/deploy
+      - name: Build installer (Inno Setup)
+        # windows-2022 ships Inno Setup 6 preinstalled at the path below; fall back to a PATH
+        # search so this doesn't silently no-op if the runner image ever moves it.
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source }
+          if (-not $iscc) { throw "ISCC.exe not found - Inno Setup missing from this runner image" }
+          & $iscc "/DMyDeployDir=${{ github.workspace }}/build/msvc/deploy" "${{ github.workspace }}/build/msvc/packaging/windows/reversi.iss"
+      - name: Build portable zip
+        working-directory: build/msvc/deploy
+        run: cmake -E tar cf "${{ github.workspace }}/reversi-windows-portable.zip" --format=zip bin plugins
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reversi-windows-installer
+          path: build/msvc/packaging/windows/Output/*.exe
+      - name: Upload portable zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reversi-windows-portable
+          path: reversi-windows-portable.zip
 
   macos:
     runs-on: macos-latest
@@ -44,6 +69,25 @@ jobs:
           arch: clang_64
           modules: qtmultimedia
           cache: true
+      - name: Configure
+        run: cmake --preset ci-macos
+      - name: Build
+        run: cmake --build --preset ci-macos --parallel
+      - name: Test
+        run: ctest --preset ci-macos
+      # M10 phase 5: packaging. Deploy step invokes macdeployqt via qt_generate_deploy_app_script()
+      # (app/CMakeLists.txt); the second, direct macdeployqt call below re-targets the already-
+      # deployed bundle purely to add its -dmg flag (qt_generate_deploy_app_script has no DMG
+      # option of its own) - install-qt-action puts Qt's bin/ (and macdeployqt) on PATH.
+      - name: Deploy (macdeployqt)
+        run: cmake --install build/release --prefix build/release/deploy
+      - name: Package DMG
+        run: macdeployqt build/release/deploy/reversi-app.app -dmg
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reversi-macos-dmg
+          path: build/release/deploy/*.dmg
 
   linux:
     # Engine + CLI + tests only; no Qt on Linux keeps this job fast.

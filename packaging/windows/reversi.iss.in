@@ -1,0 +1,63 @@
+; M10 phase 5: Inno Setup script for the Windows installer.
+;
+; This is a CMake configure_file() *template* (.iss.in), not a plain .iss - @PROJECT_VERSION@
+; below is substituted automatically from the root CMakeLists.txt's project() version at
+; configure time, so a release doesn't need this file hand-edited to bump a version string that
+; already exists as a single source of truth elsewhere in the repo.
+;
+; The actual files to package (a deployed folder - exe + Qt DLLs + plugins/, produced by
+; `cmake --install` via qt_generate_deploy_app_script(), see app/CMakeLists.txt) are NOT baked in
+; here: that path is a build-time/environment detail, not a property of the release itself, so
+; it's passed to ISCC.exe via its own /D command-line define instead
+; (ISCC /DMyDeployDir="<path-to-deployed-folder>" reversi.iss) - MyDeployDir's #define below is
+; only a fallback for running ISCC directly without that flag.
+#define MyAppName "Reversi"
+#define MyAppVersion "@PROJECT_VERSION@"
+#define MyAppPublisher "Alban Dervishi"
+#define MyAppExeName "reversi-app.exe"
+#ifndef MyDeployDir
+  #define MyDeployDir "..\..\build\msvc\deploy"
+#endif
+
+[Setup]
+; Fixed once, never regenerated per release - this is what lets Inno Setup recognize "installing
+; v1.1.0 over v1.0.0" as an upgrade of the same app rather than a separate, parallel install.
+AppId={{ABCA4F46-7890-48FA-8705-B7636C224B56}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL=https://github.com/bani966/reversi
+DefaultDirName={autopf}\{#MyAppName}
+DefaultGroupName={#MyAppName}
+DisableProgramGroupPage=yes
+UninstallDisplayIcon={app}\bin\{#MyAppExeName}
+OutputBaseFilename=reversi-{#MyAppVersion}-windows-setup
+Compression=lzma2
+SolidCompression=yes
+WizardStyle=modern
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+; Unsigned build (no code-signing certificate) - Windows SmartScreen will warn on first run
+; ("Windows protected your PC" -> More info -> Run anyway). Expected, documented in README.md's
+; own Installing section, not a defect in this installer.
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Files]
+; Everything qt_generate_deploy_app_script() produced - the exe, every Qt DLL/plugin it actually
+; needs, and the move-placement sound asset (see app/CMakeLists.txt's own install(FILES ...) rule
+; for why that's also inside bin/, not the deploy root).
+Source: "{#MyDeployDir}\bin\*"; DestDir: "{app}\bin"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyDeployDir}\plugins\*"; DestDir: "{app}\plugins"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\{#MyAppName}"; Filename: "{app}\bin\{#MyAppExeName}"
+Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\bin\{#MyAppExeName}"; Tasks: desktopicon
+
+[Tasks]
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+
+[Run]
+Filename: "{app}\bin\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
