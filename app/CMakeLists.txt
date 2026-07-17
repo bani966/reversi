@@ -21,6 +21,21 @@ qt_add_executable(reversi-app
     src/Palette.cpp
 )
 
+# App icon (M10 phase 5): a green board tile with a black/white split disc, using this app's own
+# real board-green/disc-fill colors (BoardWidget.cpp's boardPalette(), dark theme values) rather
+# than an invented palette - generated once via Pillow, committed as plain binary assets (assets/
+# reversi.ico, assets/reversi.icns), same "generated asset, not a build-time dependency" precedent
+# as tests/data/'s fixtures. Windows gets it via a compiled-in .rc resource (win_resources.rc,
+# below); macOS via MACOSX_BUNDLE_ICON_FILE + a bundle resource, set alongside the other
+# set_target_properties() call further down.
+if(WIN32)
+    target_sources(reversi-app PRIVATE win_resources.rc)
+elseif(APPLE)
+    set(REVERSI_ICNS "${CMAKE_CURRENT_SOURCE_DIR}/../assets/reversi.icns")
+    target_sources(reversi-app PRIVATE "${REVERSI_ICNS}")
+    set_source_files_properties("${REVERSI_ICNS}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+endif()
+
 target_link_libraries(reversi-app PRIVATE
     reversi::engine
     Qt6::Widgets
@@ -56,6 +71,7 @@ endif()
 set_target_properties(reversi-app PROPERTIES
     WIN32_EXECUTABLE ON
     MACOSX_BUNDLE ON
+    MACOSX_BUNDLE_ICON_FILE reversi.icns
 )
 
 # M10 phase 5: packaging. Every dev-machine workaround this project has needed so far (prepending
@@ -87,6 +103,11 @@ if(APPLE)
 else()
     install(TARGETS reversi-app RUNTIME DESTINATION bin)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../assets/move-self.wav" DESTINATION bin)
+    # Shipped alongside the exe purely so packaging/windows/reversi.iss.in can point its own
+    # SetupIconFile at it via the same {#MyDeployDir}\bin path every other packaged file uses -
+    # the exe's own taskbar/Explorer icon already comes from win_resources.rc above, independent
+    # of this copy.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../assets/reversi.ico" DESTINATION bin)
 endif()
 
 qt_generate_deploy_app_script(

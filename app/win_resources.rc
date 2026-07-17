@@ -1,0 +1,6 @@
+// Windows resource script: embeds the app icon into reversi-app.exe. IDI_ICON1 (the lowest
+// resource ID) is what Windows Explorer/taskbar/Alt-Tab show as the exe's own icon - the standard
+// convention, not something that needs any extra CMake wiring beyond compiling this .rc file. The
+// relative path below resolves against this .rc file's own directory (rc.exe's documented
+// behavior), not the working directory, so it works regardless of build directory location.
+IDI_ICON1 ICON "../assets/reversi.ico"

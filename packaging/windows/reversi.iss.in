@@ -31,6 +31,10 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\bin\{#MyAppExeName}
+; The installer's own icon (Explorer, taskbar while running, wizard title bar) - the exe/shortcut
+; icons above already come from win_resources.rc baked into reversi-app.exe itself; this is just
+; the setup executable's own, separately.
+SetupIconFile={#MyDeployDir}\bin\reversi.ico
 OutputBaseFilename=reversi-{#MyAppVersion}-windows-setup
 Compression=lzma2
 SolidCompression=yes

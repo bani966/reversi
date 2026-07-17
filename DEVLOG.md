@@ -1039,3 +1039,103 @@ existed to expose them. Recorded in full below rather than smoothed into "it wor
   directly by the user across several rounds rather than screenshot automation on this side, is
   what actually caught bugs 2 through 8 above). Both themes manually confirmed working end-to-end,
   including the settings dialog, move history, MultiPV cards, and window resize.
+
+## Project status summary (M3–M10)
+
+Moved here from README.md's own status paragraph, which had grown too long for a project intro -
+this is the condensed milestone-by-milestone narrative; the sections above hold the full raw
+per-phase writeups.
+
+Playable HvH/HvAI in the Qt GUI (M3), with the AI driven by iterative deepening + a transposition
+table + PVS + move ordering + aspiration windows on a wall-clock time budget (M4) — a measured,
+large self-play gain over M2's plain fixed-depth alpha-beta baseline (deterministic gate: depth-12
+matured search vs. depth-10 baseline, 63–0). M5 added a perfect-play exact endgame solver that
+matches every published score in the vendored FFO endgame test subset exactly — see README.md's
+Benchmarks section. M6 Phase 1 replaces disc-differential with a pattern-based evaluation trained
+on real WTHOR tournament data (12 pattern shapes — lines, diagonals, edge+2X, corner blocks —
+ternary-encoded with symmetry-shared weight tables, fit via ridge regression per game-phase
+bucket): measured 20/20 in self-play against disc-differential at equal search depth, and the
+`.wtb` parser/replay pipeline it's built on has been stress-tested against 8,874 real tournament
+games (2016–2019) with zero illegal moves. M6 Phase 2 adds a toggleable opening book
+(`OpeningBook`, off by default — no settings UI exposes it yet) built from canonicalized positions
+(symmetry-deduplicated, first ~20 plies) observed at least 5 times across a real WTHOR corpus; a
+book built from 8,886 real tournament games (1977, 2016–2019) produced 2,734 entries and,
+spot-checked against known Othello opening theory, recovers exactly the documented main lines
+(e.g. 1.f5 d6, the Diagonal Opening; 1.f5 f6 e6, the Perpendicular Opening) — including a
+cross-check that a symmetric-equivalent real opening (1.c4) independently canonicalizes to and
+recovers the *same* underlying book entry as 1.f5, confirming the symmetry canonicalization is
+correct on real data, not just in unit tests. Also new in Phase 2: `selectMove()`
+(`engine/move_selector.hpp`), the book → exact-solver → heuristic-search dispatch that GUI
+gameplay now goes through — previously missing entirely (the GUI called the heuristic search
+directly, with no path to the exact solver at all). `tools/` (gitignored raw data, generated
+weights/books ship as release assets — never committed) holds the extraction, training, and
+book-building pipeline; see `tools/README.md`. M7 adds Multi-ProbCut (`MpcModel`/`MpcConfig`, off
+by default, wired into `selectMove()`'s search branch): shallow-vs-deep search value pairs are fit
+(closed-form OLS, `tools/mpc_fitter`) into per-depth-pair coefficients, and `search()`'s internal
+nodes cut when a shallow probe's predicted deep value clears the current alpha-beta window by a
+confidence margin. Real equal-time self-play validation on a fitted model (1,500 self-played
+positions) found a genuinely-negative first configuration (too many eligible nodes paying for
+shallow-probe overhead relative to actual cuts taken) before landing on one with a measured, if
+modest, edge (11–9 in a 20-game equal-time match) — both the finding and the fix are recorded in
+the M7 section above. M8 adds Lazy SMP parallel search (`SharedTranspositionTable`,
+`searchLazySmp()` — engine/CLI-level only, not yet wired into gameplay): multiple threads
+independently run the same iterative-deepening search, with per-thread depth jitter, over one
+shared, lock-free transposition table — a "packed-atomic + XOR checksum" design where each slot's
+two words are independent relaxed atomics and a probe XORs them back together, rejecting anything
+that doesn't reconstruct the queried key (this safely rejects genuine misses and
+torn/interleaved concurrent reads identically). Verified by a local concurrent stress test and,
+more authoritatively, a dedicated ThreadSanitizer CI job added specifically for this milestone.
+Measured on this dev machine (Intel i7-9700, 8 physical cores, no hyperthreading): nps scales
+roughly 6.3× at 8 threads vs. 1, clearing the ≥3× target with real margin — an unambiguous pass.
+Strength is the honest exception: no statistically significant strength difference was detected
+between Lazy SMP and single-threaded search at the tested time budgets (three independent
+20-game equal-time matches across two budgets, including `GameController`'s actual production
+budget, 60 games combined — well within the noise a sample this size can't distinguish from an
+even split). The single-position depth diagnostic confirms the parallelism mechanism itself works
+(a genuinely deeper completed depth reached under an identical time budget), but a measurable
+full-game strength edge was not established, nor ruled out, at this sample size. Reported as a
+genuine open question rather than smoothed over — see the M8 section above for the full
+investigation, including a code-confirmed (not inferred) partial explanation: `searchLazySmp`
+always returns thread 0's own result by design (`search.cpp`), so any helper thread that searches
+deeper than thread 0 on a given move has that extra depth discarded except via its shared-TT
+contributions — a real limit on how much of the 6.3× nps figure could ever convert into strength,
+and a plausible future improvement (selecting the deepest-completed thread instead) scoped out of
+this milestone. Plus a second, still-speculative hypothesis: the depth diagnostic only probes the
+opening position, while real games spend most of their length in positions with less for jittered
+threads to usefully diverge on — left for future follow-up rather than chased further here. M9
+(five reviewed phases, no time-box) makes the GUI feature-complete. Phase 1 restructured the
+layout for a side panel. Phase 2 added save/load (this app's own JSON format), undo/redo, and
+plain-text transcript/position import-export. Phase 3 added an on-demand analysis panel:
+single-line eval/depth/nodes/PV plus MultiPV (`analyzeTopMoves()`, `engine/analysis.hpp` — ranks
+N candidate moves by repeated search with each already-ranked move excluded, locked to the *same*
+completed depth per line so the ranking is genuinely comparable, not an artifact of unequal
+search depth caught by manual testing during development). Phase 4 added a Settings dialog: AI vs
+AI game mode, and real loading for the previously-UI-less opening book/MPC model toggles, plus AI
+search depth/time-budget/exact-solver-threshold tuning. Phase 5 was a visual-parity pass matching
+the board/title-bar's established look (flat surfaces, rounded cards, `Palette.hpp`-routed
+colors) — plus a genuinely missed spec item caught and built during that pass: a move-history
+list (reusing the same undo/redo restore path, not new state), and a structural rebuild of the
+MultiPV display from a monospace text block into real per-line row cards. See the M9 sections
+above for the full per-phase writeups, including three real bugs manual GUI testing caught (not
+the automated suite) during phase 3 alone. M10 (release, no time-box, same reviewed-phase practice
+as M9) adds the remaining polish and ships it. Phase 1 added piece-flip animation for captured
+discs (a shared `QVariantAnimation` rendering the classic squash-to-an-edge-on "coin flip," with
+the just-played square itself deliberately excluded so only real captures flip) — including a
+genuine design problem caught before implementation: a plain bitboard diff can't distinguish a
+real capture from `newGame()`'s central squares coincidentally changing color from whatever the
+previous game left there, so `GameController` threads an explicit `animate` flag through instead
+of inferring it. Phase 2 added a move-placement sound effect (`QSoundEffect`) — with a real,
+fully-diagnosed finding: the sound asset loaded via Qt's `qrc:` resource system silently failed on
+this machine's Multimedia backend (no crash, no visible error), while the identical file loaded
+and played correctly from a plain filesystem path; shipped as a WAV copied next to the executable
+at build time, resolved via `applicationDirPath()` at runtime. Phase 3 added a light/dark theme
+toggle (`chrome::ThemeManager`, routed through the same `Palette.hpp` every widget already read
+from since M3) — a direct test of that routing design that mostly passed (~15 call sites needed
+zero changes) but surfaced seven real, distinct rendering bugs only visible once a second theme
+actually existed (a cached-forever static palette snapshot, several theme-inverted color
+assumptions, a clipped group-box title, and a frameless-window resize-drag regression fixed along
+the way) — all caught by manual GUI testing, all recorded in the M10 Phase 3 section above. Phase
+5 packages the app for both platforms: Qt's own `qt_generate_deploy_app_script()`
+(windeployqt/macdeployqt via one CMake-native mechanism, replacing the manual PATH-prepend
+workaround used throughout development) backs a Windows Inno Setup installer plus a portable zip,
+and a macOS DMG — see README.md's Installing section.
