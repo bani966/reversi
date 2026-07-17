@@ -34,8 +34,12 @@ jobs:
         run: ctest --preset ci-windows
       # M10 phase 5: packaging. Deploy step invokes windeployqt via qt_generate_deploy_app_script()
       # (app/CMakeLists.txt) - one mechanism, no hand-rolled DLL copying.
+      # qt6_deploy_qt_conf requires an absolute --prefix (it writes qt.conf's path as-is, with no
+      # join against the working directory) - confirmed by this exact failure the first time this
+      # ran on CI with a relative one; local verification had used an absolute path throughout, so
+      # this didn't surface until now.
       - name: Deploy (windeployqt)
-        run: cmake --install build/msvc --config Release --prefix build/msvc/deploy
+        run: cmake --install build/msvc --config Release --prefix "${{ github.workspace }}/build/msvc/deploy"
       - name: Build installer (Inno Setup)
         # windows-2022 ships Inno Setup 6 preinstalled at the path below; fall back to a PATH
         # search so this doesn't silently no-op if the runner image ever moves it.
@@ -79,8 +83,9 @@ jobs:
       # (app/CMakeLists.txt); the second, direct macdeployqt call below re-targets the already-
       # deployed bundle purely to add its -dmg flag (qt_generate_deploy_app_script has no DMG
       # option of its own) - install-qt-action puts Qt's bin/ (and macdeployqt) on PATH.
+      # Same absolute-prefix requirement as the Windows job's deploy step above.
       - name: Deploy (macdeployqt)
-        run: cmake --install build/release --prefix build/release/deploy
+        run: cmake --install build/release --prefix "${{ github.workspace }}/build/release/deploy"
       - name: Package DMG
         run: macdeployqt build/release/deploy/reversi-app.app -dmg
       - name: Upload DMG artifact
