@@ -128,6 +128,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle(QStringLiteral("Reversi"));
     resize(1020,
            796); // was 720x796; +300px (M9 phase 1) to make room for the new side panel column
+    // M9 phase 5: no floor existed before this - shrinking far enough (e.g. 380x300) squeezed
+    // board_ down to a near-invisible sliver and clipped the analysis pane's button/results
+    // entirely off-screen, found by manually testing the resize behavior with the panel's now-
+    // real (phases 3-5) content, not the empty placeholder phase 1's own verification checked
+    // against. 700x600 is the smallest size manually confirmed to still render every section
+    // (title/menu/board/panel/status) legibly.
+    setMinimumSize(700, 600);
     setStyleSheet(buildChromeStyleSheet());
 
 #ifdef Q_OS_WIN
