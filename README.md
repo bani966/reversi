@@ -4,7 +4,9 @@ A Reversi/Othello desktop application: a bitboard engine in pure C++20 with alph
 search, a perfect-play endgame solver, a WTHOR-trained pattern evaluation with
 Multi-ProbCut, and a minimalist Qt 6 Widgets GUI with live engine analysis.
 
-**Status: M8 complete — Lazy SMP parallel search added on top of M7's Multi-ProbCut.**
+**Status: M9 complete — feature-complete GUI (save/load, undo/redo, import/export, AI vs AI,
+on-demand MultiPV analysis, settings, move history) built and visually polished on top of M8's
+Lazy SMP.**
 Playable HvH/HvAI
 in the Qt GUI (M3), with the AI driven by iterative deepening + a transposition table + PVS +
 move ordering + aspiration windows on a wall-clock time budget (M4) — a measured, large
@@ -63,7 +65,21 @@ ever convert into strength, and a plausible future improvement (selecting the de
 thread instead) scoped out of this milestone. Plus a second, still-speculative hypothesis: the
 depth diagnostic only probes the opening position, while real games spend most of their length in
 positions with less for jittered threads to usefully diverge on — left for future follow-up
-rather than chased further here.
+rather than chased further here. M9 (five reviewed phases, no time-box) makes the GUI feature-
+complete. Phase 1 restructured the layout for a side panel. Phase 2 added save/load (this app's
+own JSON format), undo/redo, and plain-text transcript/position import-export. Phase 3 added an
+on-demand analysis panel: single-line eval/depth/nodes/PV plus MultiPV (`analyzeTopMoves()`,
+`engine/analysis.hpp` — ranks N candidate moves by repeated search with each already-ranked move
+excluded, locked to the *same* completed depth per line so the ranking is genuinely comparable,
+not an artifact of unequal search depth caught by manual testing during development). Phase 4
+added a Settings dialog: AI vs AI game mode, and real loading for the previously-UI-less opening
+book/MPC model toggles, plus AI search depth/time-budget/exact-solver-threshold tuning. Phase 5
+was a visual-parity pass matching the board/title-bar's established look (flat surfaces, rounded
+cards, `Palette.hpp`-routed colors) — plus a genuinely missed spec item caught and built during
+that pass: a move-history list (reusing the same undo/redo restore path, not new state), and a
+structural rebuild of the MultiPV display from a monospace text block into real per-line row
+cards. See `DEVLOG.md` for the full per-phase writeups, including three real bugs manual GUI
+testing caught (not the automated suite) during phase 3 alone.
 
 ## Layout
 
@@ -110,7 +126,7 @@ ctest --preset ci-linux
 | M6 (done) | Pattern eval + opening book | WTHOR-trained eval beats hand eval at equal depth; full-DB replay passes |
 | M7 (done) | Multi-ProbCut | Measured equal-time strength gain; toggle off by default |
 | M8 (done*) | Lazy SMP | ≥3× nps on 8 threads; TSan clean; no strength regression at equal time |
-| M9 | Feature complete | Undo/redo, save/load, import/export, settings, AI vs AI, analysis panel |
+| M9 (done) | Feature complete | Undo/redo, save/load, import/export, settings, AI vs AI, analysis panel |
 | M10 | Release | Animations, sound, themes, installers, v1.0 |
 
 \* M8's engineering deliverable is complete, correct, and CI-verified (TSan-clean, nps clears the

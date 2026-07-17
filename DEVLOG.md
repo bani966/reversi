@@ -767,3 +767,82 @@ data features, analysis panel, settings panel, visual parity pass).
   immediately; both `tests/data/dev_opening_book.bin` and `dev_mpc_model.bin` loading successfully
   with their status labels/checkboxes updating correctly and a subsequent AI move still completing
   normally with both active simultaneously.
+
+## Phase 5: visual parity pass (final M9 phase)
+
+Five reviewed steps, each committed independently once green, matching the cadence of every
+earlier M9 phase. Full audit done before any code (see the approved plan): `panel_` was a flat,
+unbordered rectangle (only its children had any rounding, from phase 3's
+`buildAnalysisPanelStyleSheet()`); `SettingsDialog` had zero styling anywhere - bare Fusion
+defaults; no move-history list widget existed anywhere in the codebase despite phase 1's own
+placeholder comment mentioning one.
+
+- **Step 1**: added `chrome::accentColor` (`Palette.hpp`/`.cpp`) - a solid, muted gold,
+  deliberately a *separate* role from `lastMoveHighlightColor` (which stays the board-overlay-
+  specific low-alpha tint it already was) rather than overloading that one's meaning onto general
+  chrome emphasis.
+- **Step 2 - move-history list, a missed spec item, not new scope**: caught by the user, not by
+  this project's own planning - move history was in the original spec alongside undo/redo and
+  save/load, but phases 1-4 never actually built it (phase 1's comment mentioned it as future
+  content; nothing followed up). Built as its own reviewed step, same treatment MultiPV got in
+  phase 3. `GameController` gained `fullMoveList()` (the *whole* `history_`, including any undone
+  "redo" tail - unlike the existing private `currentMoveList()`, which stops at `historyIndex_`),
+  `currentHistoryIndex()`, and `jumpToHistoryIndex()` (reuses `restoreFromHistory()` exactly - no
+  new history tracking; unlike `undo()`/`redo()`, does not skip past AI turns, since a list click
+  targets one specific index directly). A new `QListWidget` in a `panel_` pane, rebuilt on every
+  `boardChanged` (traced every call site first: `newGame`/`onSquareClicked`/`onAiSearchFinished`/
+  `undo`/`redo`/`applyLoadedHistory` all reach it - no new signal needed), with the current entry
+  bold+`accentColor`-highlighted. Manually verified both directions (click an earlier entry, click
+  a later one, confirmed no unwanted AI response either way) and confirmed the indicator also
+  tracks correctly through the Edit menu's real Undo action, not just list clicks.
+- **Step 3 - MultiPV results rebuild, structural not a restyle**: explicitly scoped as a real
+  refactor of already-working, already-verified code, not a color pass - the user's own framing,
+  carried through to its own re-verification. `analysisResultsView_` (a single `QPlainTextEdit`
+  with monospace text rows) replaced by a `QScrollArea` over per-line `QFrame` "cards"
+  (`buildAnalysisLineRow()`): a rank badge (solid `accentColor` for the top line only, muted for
+  the rest), bold move+score, a dimmer depth/nodes line, and the PV on its own dimmer line for the
+  top line only. The `GameController::analysisFinished` signal/slot boundary this is called from
+  is completely untouched - confirmed by re-reading the code before starting, not assumed. Re-ran
+  phase 3's original manual verification steps in full afterward (not just a fresh screenshot):
+  analyze once, play a move and re-analyze (display updates), switch to Human vs AI (button
+  disables while the AI thinks), start a new game mid-analysis (clean reset, no stale rows,
+  consistent with pre-existing cancel behavior - not a new regression).
+- **Step 4 - shared stylesheet + `panel_` border/radius**: the old MainWindow-local
+  `buildAnalysisPanelStyleSheet()` generalized into `chrome::panelControlsStyleSheet()`
+  (`Palette.hpp`/`.cpp` - so it can't drift out of sync as two independently-hand-copied
+  stylesheets could), extended with `QGroupBox`/`QCheckBox` (incl. `QCheckBox::indicator`)/
+  `QSpinBox` rules, and applied to **both** `panel_` and `SettingsDialog`. `panel_` changed from a
+  plain `QWidget` to a `QFrame` - a bare `QWidget` doesn't paint its own QSS background/border by
+  default (`Qt::WA_StyledBackground` is the other way to opt in; `QFrame` does it automatically,
+  the same reason the MultiPV row cards are `QFrame`s) - and gained a real border + 8px radius via
+  a `QFrame#sidePanel` selector. Controls (buttons, spin boxes) keep the existing 4px radius;
+  containers (`panel_` itself, `QGroupBox`, the MultiPV cards) use 8px - a deliberate two-tier
+  scale, not arbitrary. `boardRow`'s margins/spacing became symmetric on all four sides (previously
+  left-only) - the new rounding was otherwise invisible, since `panel_` sat flush against the
+  window's top/right/bottom edges and directly adjacent to `board_` with zero spacing, leaving no
+  visible background behind any of its corners.
+- **Step 5 - resize verification, found and fixed a real problem**: checked default (1020×796),
+  wide (1500×900), and narrow (700×600) sizes with the panel's now-fully-populated content
+  (phase 1's own resize verification predated all of it, against an empty placeholder). All three
+  held up correctly. Pushed further to a more extreme size (380×300) and found a genuine problem:
+  `board_` shrank to a near-invisible sliver and the analysis pane's button/results were clipped
+  off-screen entirely - no `MainWindow::setMinimumSize` floor existed before this. Fixed with a
+  700×600 floor, the smallest size manually confirmed to still render every section legibly.
+  Investigated further before treating this as urgent, and worth recording honestly: this
+  frameless window has **no resize-border handling anywhere** (no `WM_NCHITTEST`/`nativeEvent`
+  override, no `QSizeGrip`, confirmed by grep) - a real user cannot actually drag-resize this
+  window below its default size today; the broken state was only reachable via a raw external
+  `SetWindowPos` call bypassing Qt's own constraint machinery entirely. The new floor is genuine
+  defensive hygiene for any future resize-enabling addition or programmatic resize, not a fix for
+  an actively user-reachable bug - stated plainly rather than implied as more urgent than it is.
+- Verified throughout: 204/204 automated tests green after every step (no new automated tests
+  added this phase - `fullMoveList()`/`jumpToHistoryIndex()` are thin, GUI-adjacent additions in
+  the same shape as the existing untested AI-search/analysis async paths, a deliberate,
+  precedent-matching choice); full manual GUI verification per step, committed independently once
+  green, matching every earlier M9 phase's cadence.
+
+**M9 is now fully complete** - all five phases (layout, game data features, analysis panel,
+settings panel, visual parity) built, tested, and manually verified, including one caught missed-
+spec item (move history) and one structural rebuild (MultiPV display) each explicitly called out
+and re-verified rather than silently folded into the visual pass. M10 (release: animations,
+sound, themes, installers, v1.0) is next.
