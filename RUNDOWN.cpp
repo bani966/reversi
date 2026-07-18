@@ -201,6 +201,7 @@ void onSquareClicked(Game& game, int clickedSquare) {
 // solver near the end - section 7 - rather than ever guessing this crudely in practice.)
 int evaluate(const Position& pos) {
     return std::popcount(pos.own) - std::popcount(pos.opp);
+    // Here we can also add some of the ideas mentioned at the end.
 }
 
 int finalScore(const Position& pos) {
@@ -304,7 +305,7 @@ struct OpeningBook {
 };
 
 // ============================================================================
-// 7. Brute-force endgame solver (just the idea)
+// 7. Brute-force endgame solver
 // ============================================================================
 // Once few enough squares are empty, it's cheap enough to search all the way to the true end of
 // the game and know the EXACT final result - no evaluation-function guessing needed at all. This
@@ -377,6 +378,20 @@ int solveExact(const Position& pos, int alpha, int beta) {
 //   transposition table. No thread is explicitly assigned a part of the tree - the jitter alone
 //   makes them naturally explore somewhat different parts, and every thread benefits from every
 //   other thread's TT entries along the way.
+
+// Next ideas from watching the successful AI runs and observing key elements:
+//
+// - Corner grabs: prefer to take corners, as those are highly advantageous for the player.
+//   If you take more corners, less odds that your opponent flips those pieces, and, a filled corner
+//   row / column cannot be taken at all.
+//
+// - Measure discs that you cannot flip: also weighted highly; same idea as above - prefer positions
+//   where your disc advantage cannot be reduced
+//
+// - Force passes: passes are done when a player cannot make a move, which passes the play back to you.
+//   This seems very advantageous as often when a player cannot make a move it will lead to massive flip-overs,
+//   especially in the endgame.
+//
 
 // ============================================================================
 // 9. Main game loop, tying it all together

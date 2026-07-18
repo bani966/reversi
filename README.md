@@ -12,7 +12,7 @@ step, and every real bug found along the way).
 
 ## Screenshots
 
-<!-- TODO: add screenshots/demo GIF here — board (light + dark theme), analysis panel, settings
+<!-- TODO: add screenshots/demo GIF — board (light + dark theme), analysis panel, settings
      dialog. -->
 
 ## Layout
