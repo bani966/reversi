@@ -388,9 +388,11 @@ int solveExact(const Position& pos, int alpha, int beta) {
 // - Measure discs that you cannot flip: also weighted highly; same idea as above - prefer positions
 //   where your disc advantage cannot be reduced
 //
-// - Force passes: passes are done when a player cannot make a move, which passes the play back to you.
-//   This seems very advantageous as often when a player cannot make a move it will lead to massive flip-overs,
-//   especially in the endgame.
+// - Force passes: passes are done when a player cannot make a move, which passes the play back to
+// you.
+//   This seems very advantageous as often when a player cannot make a move it will lead to massive
+//   flip-overs, especially in the endgame.
+//
 //
 
 // ============================================================================
