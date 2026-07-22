@@ -502,13 +502,11 @@ void MainWindow::createMenus() {
     connect(humanVsHuman, &QAction::triggered, this,
             [this] { controller_->newGame(GameMode::HumanVsHuman); });
 
-    QAction* humanIsBlack =
-        gameMenu->addAction(QStringLiteral("Human vs AI (You play Black)"));
+    QAction* humanIsBlack = gameMenu->addAction(QStringLiteral("Human vs AI (You play Black)"));
     connect(humanIsBlack, &QAction::triggered, this,
             [this] { controller_->newGame(GameMode::HumanIsBlack); });
 
-    QAction* humanIsWhite =
-        gameMenu->addAction(QStringLiteral("Human vs AI (You play White)"));
+    QAction* humanIsWhite = gameMenu->addAction(QStringLiteral("Human vs AI (You play White)"));
     connect(humanIsWhite, &QAction::triggered, this,
             [this] { controller_->newGame(GameMode::HumanIsWhite); });
 
