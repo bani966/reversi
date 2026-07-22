@@ -1,12 +1,6 @@
 // ============================================================================
 // RUNDOWN.cpp
 //
-// A simplified, presentation-oriented walkthrough of how this Reversi/Othello engine works.
-// This is NOT the real production code - things are simplified and collapsed for readability
-// wherever that made the idea clearer (real fast bitboard tricks, Qt's actual event handling,
-// etc. are skipped in favor of plain loops and straight-line functions). See engine/ and app/ for
-// the real implementation; see GUIDE.md to build it, DEVLOG.md for the full development history.
-//
 // Sections:
 //   1. Board representation (bitboards)
 //   2. Move generation + applying a move

@@ -496,23 +496,23 @@ void MainWindow::createMenus() {
     connect(redo, &QAction::triggered, this, [this] { controller_->redo(); });
 
     // Game: unchanged from before M9 phase 2, plus AI vs AI (M9 phase 4).
-    QMenu* gameMenu = menuBar_->addMenu(QStringLiteral("&Game"));
+    QMenu* gameMenu = menuBar_->addMenu(QStringLiteral("&New Game"));
 
-    QAction* humanVsHuman = gameMenu->addAction(QStringLiteral("New Game: Human vs Human"));
+    QAction* humanVsHuman = gameMenu->addAction(QStringLiteral("Human vs Human"));
     connect(humanVsHuman, &QAction::triggered, this,
             [this] { controller_->newGame(GameMode::HumanVsHuman); });
 
     QAction* humanIsBlack =
-        gameMenu->addAction(QStringLiteral("New Game: Human vs AI (You play Black)"));
+        gameMenu->addAction(QStringLiteral("Human vs AI (You play Black)"));
     connect(humanIsBlack, &QAction::triggered, this,
             [this] { controller_->newGame(GameMode::HumanIsBlack); });
 
     QAction* humanIsWhite =
-        gameMenu->addAction(QStringLiteral("New Game: Human vs AI (You play White)"));
+        gameMenu->addAction(QStringLiteral("Human vs AI (You play White)"));
     connect(humanIsWhite, &QAction::triggered, this,
             [this] { controller_->newGame(GameMode::HumanIsWhite); });
 
-    QAction* aiVsAi = gameMenu->addAction(QStringLiteral("New Game: AI vs AI"));
+    QAction* aiVsAi = gameMenu->addAction(QStringLiteral("AI vs AI"));
     connect(aiVsAi, &QAction::triggered, this, [this] { controller_->newGame(GameMode::AiVsAi); });
 }
 
